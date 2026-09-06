@@ -15,4 +15,8 @@ and a live readout where an illustration would be. Same family, not a copy.
     node scripts/deploy-contract.mjs
     node scripts/brand.mjs        # marks + link-preview card
 
+The reader runs once, from the other build's repository, and writes to the
+database both share — a second copy of the same cron would only duplicate
+readings, so there is no workflow here.
+
 Not affiliated with, or endorsed by, fomo.
