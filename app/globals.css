@@ -1,0 +1,276 @@
+@import "tailwindcss";
+
+/* ============================================================
+   fomo market — the terminal build
+
+   Same family as the app it is written on: night ground, one
+   periwinkle accent, green and orange for money. Everything else
+   is its own. Where the other build is centred, round and
+   photographic, this one is left-aligned, square and typeset —
+   ruled hairlines instead of cards, mono for every figure, and
+   micro-labels doing the work an illustration would do.
+   ============================================================ */
+
+:root {
+  /* A colder ground than the app's violet-black: this one sits on
+     slate, so the accent reads as the only warm thing on screen. */
+  --n-0:  #08090d;
+  --n-1:  #0c0e13;
+  --n-2:  #12151c;
+  --n-3:  #181c25;
+  --n-4:  #222733;
+  --n-5:  #2f3543;
+  --n-6:  #495062;
+  --n-7:  #6a7185;
+  --n-8:  #8d94a6;
+  --n-9:  #c3c8d4;
+  --n-10: #f2f4f8;
+
+  --fg:             #f2f4f8;
+  --fg-muted:       #949bad;
+  --fg-faint:       #666d80;
+  --surface:        var(--n-0);
+  --surface-raised: var(--n-1);
+  --surface-sunken: #05060a;
+  --surface-hover:  var(--n-2);
+
+  --accent:          #5b6cff;
+  --accent-hover:    #808dff;
+  --accent-quiet:    rgba(91, 108, 255, .13);
+  --accent-contrast: #ffffff;
+  --accent-ring:     rgba(91, 108, 255, .4);
+
+  --up:         #2fbf71;
+  --up-quiet:   rgba(47, 191, 113, .12);
+  --down:       #e2543c;
+  --down-quiet: rgba(226, 84, 60, .12);
+
+  --border-subtle: rgba(255, 255, 255, .06);
+  --border-strong: rgba(255, 255, 255, .14);
+  /* the ruled line this build is built out of */
+  --rule: rgba(255, 255, 255, .08);
+
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: 0 12px 40px -24px rgba(0,0,0,.9);
+  --shadow-4: 0 20px 60px -30px rgba(0,0,0,.95);
+  --shadow-5: 0 30px 80px -40px rgba(0,0,0,1);
+  --shadow-accent: 0 0 0 1px rgba(91,108,255,.5) inset;
+  --glow: 0 0 0 1px rgba(91,108,255,.3), 0 0 32px -10px rgba(91,108,255,.45);
+
+  /* corners are nearly square here — the other build is the round one */
+  --r-xs: 2px; --r-sm: 4px; --r-md: 6px; --r-lg: 8px; --r-xl: 10px; --r-full: 9999px;
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px;
+  --s-8: 32px; --s-10: 40px; --s-12: 48px; --s-16: 64px; --s-20: 80px;
+  --s-24: 96px; --s-32: 128px; --s-40: 160px; --s-48: 192px;
+  --gutter: clamp(16px, 4vw, 56px);
+  --section-y: clamp(56px, 8vw, 120px);
+  --nav-h: 56px;
+
+  --step--1: clamp(.75rem, .73rem + .1vw, .8125rem);
+  --step-0:  clamp(.9375rem, .91rem + .14vw, 1rem);
+  --step-1:  clamp(1.0625rem, 1.01rem + .28vw, 1.1875rem);
+  --step-2:  clamp(1.25rem, 1.15rem + .5vw, 1.5rem);
+  --step-3:  clamp(1.5rem, 1.33rem + .85vw, 2rem);
+  --step-4:  clamp(1.75rem, 1.5rem + 1.25vw, 2.5rem);
+  --step-5:  clamp(2.125rem, 1.7rem + 2.1vw, 3.25rem);
+  --step-6:  clamp(2.5rem, 1.7rem + 4vw, 5rem);
+
+  /* Space Grotesk for headlines, Inter for prose, Plex Mono for every
+     figure. Numbers are most of this product, so they get a real mono
+     rather than tabular figures borrowed from a sans. */
+  --font-display: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ease-reveal: cubic-bezier(.16, 1, .3, 1);
+  --ease-ui:     cubic-bezier(.32, .72, 0, 1);
+  --ease-draw:   cubic-bezier(.65, 0, .35, 1);
+  --ease-lift:   cubic-bezier(.22, .61, .24, 1);
+  --dur-micro: .12s; --dur-state: .18s; --dur-hover: .22s;
+  --dur-enter: .38s; --dur-settle: .4s; --dur-fill: 1s; --dur-draw: 1.4s;
+}
+
+* { box-sizing: border-box; }
+
+html { color-scheme: dark; background: var(--surface); }
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -.03em;
+  line-height: 1.08;
+  margin: 0;
+}
+
+a { color: inherit; text-decoration: none; }
+
+::selection { background: var(--accent); color: #fff; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--n-4); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--n-5); }
+
+/* every figure on the site is mono here — that is the whole voice */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+
+.wrap { width: 100%; max-width: 1180px; margin-inline: auto; padding-inline: var(--gutter); }
+.wrap-wide { width: 100%; max-width: 1560px; margin-inline: auto; padding-inline: var(--gutter); }
+
+/* the micro-label: mono, tracked out, doing the work of a heading */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: .6875rem; font-weight: 500; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--fg-faint);
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -.05em;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+/* a panel is a ruled box, not a floating card */
+.panel {
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+}
+
+.lift {
+  transition: background var(--dur-hover) var(--ease-ui),
+              border-color var(--dur-hover) var(--ease-ui);
+}
+.lift:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+
+.row-hit { transition: background var(--dur-micro) var(--ease-ui); }
+.row-hit:hover { background: var(--surface-hover); }
+
+.reveal { opacity: 0; transform: translateY(12px); }
+.reveal.in {
+  opacity: 1; transform: none;
+  transition: opacity var(--dur-enter) var(--ease-reveal),
+              transform var(--dur-enter) var(--ease-reveal);
+}
+
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.spark-line {
+  stroke-dasharray: var(--len); stroke-dashoffset: var(--len);
+  animation: draw var(--dur-draw) var(--ease-draw) forwards;
+}
+@keyframes fadeArea { from { opacity: 0 } to { opacity: 1 } }
+.spark-area { animation: fadeArea var(--dur-fill) var(--ease-draw) forwards; opacity: 0; }
+
+@keyframes marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+.marquee-track { animation: marquee 60s linear infinite; will-change: transform; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1) }
+  50%      { opacity: .35; transform: scale(.8) }
+}
+.live-dot { animation: pulse-dot 2s var(--ease-ui) infinite; }
+
+/* the hairline grid the hero is drawn on */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, var(--rule) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--rule) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(120% 90% at 20% 0%, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(120% 90% at 20% 0%, #000 0%, transparent 72%);
+}
+
+@keyframes scan {
+  from { transform: translateY(-100%) }
+  to   { transform: translateY(900%) }
+}
+.scanline { animation: scan 9s linear infinite; }
+
+.profile-banner {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  overflow: hidden;
+}
+@media (min-width: 640px) {
+  .profile-banner { height: 200px; }
+}
+
+.profile-stats {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px 24px;
+  border-block: 1px solid var(--rule);
+  padding-block: 20px;
+}
+@media (min-width: 640px)  { .profile-stats { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1024px) { .profile-stats { grid-template-columns: repeat(6, 1fr); } }
+
+.profile-chart-card {
+  margin-top: 32px;
+  padding: 20px 24px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--rule);
+  background: var(--surface-raised);
+}
+@media (min-width: 640px) {
+  .profile-chart-card { padding: 24px; }
+}
+
+/* a board row: rank, avatar, account, spark, money, quotes */
+.board-row {
+  display: grid;
+  grid-template-columns: 26px 34px minmax(0, 1fr) 96px 120px auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 11px var(--s-4);
+}
+@media (max-width: 900px) {
+  .board-row { grid-template-columns: 22px 32px minmax(0, 1fr) auto; }
+  .board-row .list-spark { display: none !important; }
+}
+@media (max-width: 560px) {
+  .board-row { grid-template-columns: 32px minmax(0, 1fr) auto; padding: 11px var(--s-3); }
+  .board-row .list-rank { display: none !important; }
+  .board-row .list-quotes { display: none !important; }
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s-4);
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .app-shell { grid-template-columns: 272px minmax(0, 1fr); }
+}
+
+input, textarea, select, button { font-family: inherit; }
+input::placeholder { color: var(--fg-faint); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+}

@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "fomomarket", "runtimeExecutable": "npx", "runtimeArgs": ["next", "dev", "-p", "3082"], "port": 3082 }
+  ]
+}
