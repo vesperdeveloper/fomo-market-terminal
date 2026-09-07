@@ -1,28 +1,24 @@
+import Image from "next/image";
+
 /**
- * The mark for the terminal build: a square bracket closing on a filled
- * block — a slot on a board with something in it. Deliberately nothing like
- * the two-circle glyph the other build uses, since the two share a name and
- * should not share a logo.
+ * The mark, lifted off its blue plate by scripts/cut-logo.py.
+ *
+ * The counters are transparent rather than white, so whatever is behind the
+ * mark shows through them — which is what makes the pair read as eyes on a
+ * dark ground. `size` is the width; the crown makes it wider than it is tall.
  */
-export default function Mark({ size = 22 }: { size?: number }) {
+const RATIO = 938 / 571;
+
+export default function Mark({ size = 26 }: { size?: number }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
+    <Image
+      src="/brand/mark.png"
+      alt=""
       aria-hidden
-      style={{ display: "block", flexShrink: 0 }}
-    >
-      <path
-        d="M8.5 3H4.5C3.67157 3 3 3.67157 3 4.5V19.5C3 20.3284 3.67157 21 4.5 21H8.5"
-        stroke="currentColor" strokeWidth="2" strokeLinecap="square"
-      />
-      <path
-        d="M15.5 3H19.5C20.3284 3 21 3.67157 21 4.5V19.5C21 20.3284 20.3284 21 19.5 21H15.5"
-        stroke="currentColor" strokeWidth="2" strokeLinecap="square"
-      />
-      <rect x="9.5" y="9.5" width="5" height="5" fill="var(--accent)" />
-    </svg>
+      width={Math.round(size * RATIO)}
+      height={size}
+      priority
+      style={{ display: "block", height: size, width: "auto", flexShrink: 0 }}
+    />
   );
 }

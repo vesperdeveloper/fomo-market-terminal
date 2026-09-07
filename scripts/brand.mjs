@@ -3,11 +3,10 @@
  * site uses, so a change to the wordmark never leaves a stale bitmap behind.
  */
 import { chromium } from "playwright";
-const MARK = `<svg viewBox="0 0 24 24" width="__W__" height="__W__" fill="none">
-  <path d="M8.5 3H4.5C3.67157 3 3 3.67157 3 4.5V19.5C3 20.3284 3.67157 21 4.5 21H8.5" stroke="#F2F4F8" stroke-width="2" stroke-linecap="square"/>
-  <path d="M15.5 3H19.5C20.3284 3 21 3.67157 21 4.5V19.5C21 20.3284 20.3284 21 19.5 21H15.5" stroke="#F2F4F8" stroke-width="2" stroke-linecap="square"/>
-  <rect x="9.5" y="9.5" width="5" height="5" fill="#5B6CFF"/>
-</svg>`;
+import { readFileSync } from "node:fs";
+// the real mark, already cut off its plate by scripts/cut-logo.py
+const mark = readFileSync("public/brand/mark.png").toString("base64");
+const MARK = `<img src="data:image/png;base64,${mark}" style="width:__W__px;height:auto;display:block">`;
 
 const page = (body, w, h) => `<!doctype html><meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">

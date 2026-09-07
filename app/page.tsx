@@ -144,10 +144,6 @@ export default async function Home() {
                   background: "var(--surface-raised)", fontSize: ".8125rem",
                 }}
               >
-                <span style={{ letterSpacing: ".18em", textTransform: "uppercase", fontSize: ".6875rem", color: "var(--fg-faint)" }}>
-                  Contract
-                </span>
-                <span style={{ width: 1, height: 14, background: "var(--rule)" }} />
                 <span style={{ color: "var(--fg-faint)" }}>CA:</span>
                 <span style={{ color: "var(--accent-hover)" }}>soon</span>
               </div>
