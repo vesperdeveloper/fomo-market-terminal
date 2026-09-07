@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Avatar } from "./TraderCard";
-import { usdShort, signed, pct } from "@/lib/format";
+import { usdShort, moveLabel } from "@/lib/format";
 
 export interface RailRow {
   handle: string;
@@ -10,6 +10,7 @@ export interface RailRow {
   pnl: number;
   delta24h: number;
   change24h: number;
+  hasRecord: boolean;
   marketId: number | null;
   window: string | null;
 }
@@ -41,8 +42,7 @@ export default function MarketRail({ rows, activeId }: { rows: RailRow[]; active
         {rows.map((r) => {
           const on = r.marketId === activeId;
           const up = r.delta24h >= 0;
-          const start = r.pnl - r.delta24h;
-          const usable = Math.abs(start) > Math.abs(r.delta24h) * 0.1 && Math.abs(start) > 1000;
+          const moved = moveLabel({ pnl: r.pnl, delta: r.delta24h, change: r.change24h, hasRecord: r.hasRecord });
           return (
             <Link
               key={r.handle}
@@ -72,9 +72,12 @@ export default function MarketRail({ rows, activeId }: { rows: RailRow[]; active
               <span style={{ textAlign: "right" }}>
                 <span
                   className="num"
-                  style={{ display: "block", fontSize: ".8125rem", color: up ? "var(--up)" : "var(--down)" }}
+                  style={{
+                    display: "block", fontSize: ".8125rem",
+                    color: moved === null ? "var(--fg-faint)" : up ? "var(--up)" : "var(--down)",
+                  }}
                 >
-                  {up ? "▲" : "▼"} {(usable ? pct(r.change24h) : signed(r.delta24h)).replace("+", "").replace("−", "")}
+                  {moved === null ? "—" : `${up ? "▲" : "▼"} ${moved.replace("+", "").replace("−", "")}`}
                 </span>
                 {r.window && (
                   <span style={{ fontSize: ".6875rem", color: "var(--fg-faint)" }}>{r.window}</span>

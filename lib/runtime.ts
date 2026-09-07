@@ -36,7 +36,17 @@ let booted = false;
 /** A source that is not the local simulator. */
 const isReal = (source: string) => !source.startsWith("sim://");
 
-export async function ready() {
+/**
+ * The record, ready to read.
+ *
+ * `manage` is what separates a page render from the keeper's tick. Opening
+ * and settling markets is a write, and doing it as a side effect of drawing
+ * a page meant every visitor paid for it — including the reads it needs. A
+ * render asks for `manage: false` and gets only what it is going to show;
+ * the ingest endpoint asks for the whole record and does the managing.
+ */
+export async function ready(opts: { manage?: boolean; sinceMs?: number } = {}) {
+  const { manage = true, sinceMs } = opts;
   const store = getStore();
   if (!booted) {
     booted = true;
@@ -60,7 +70,9 @@ export async function ready() {
       await store.putTraders(ROSTER);
     }
   }
-  const snaps = await store.listSnapshots();
+  const snaps = await store.listSnapshots(sinceMs);
+  if (!manage) return { store, snaps };
+
   const traders = await store.getTraders();
 
   // the opening prior is estimated from each account's own history, so the
@@ -68,12 +80,8 @@ export async function ready() {
   let seriesOf: ((h: string) => { t: string; pnl: number }[]) | undefined;
   if (isDurable()) {
     try {
-      const { getHistory } = await import("./store-postgres");
-      const pairs = await Promise.all(
-        traders.slice(0, ROSTER_SIZE).map(async (t) =>
-          [t.handle, await getHistory(t.handle)] as const),
-      );
-      const m = Object.fromEntries(pairs);
+      const { getHistoryMany } = await import("./store-postgres");
+      const m = await getHistoryMany(traders.slice(0, ROSTER_SIZE).map((t) => t.handle));
       seriesOf = (h) => m[h] ?? [];
     } catch { seriesOf = undefined; }
   }

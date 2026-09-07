@@ -4,7 +4,10 @@ import { board } from "@/lib/view";
 import Ticket from "@/components/Ticket";
 import MarketRail, { type RailRow } from "@/components/MarketRail";
 
-export const dynamic = "force-dynamic";
+/* Rendered once and reused for 20s — the ticket re-reads the book itself after a fill; this is the shell.
+   Every click used to be a full server render against the database, which
+   is what made the site feel slow to answer. */
+export const revalidate = 20;
 
 export default async function MarketPage({
   params, searchParams,
@@ -38,6 +41,7 @@ export default async function MarketPage({
       pnl: r.pnl,
       delta24h: r.delta24h,
       change24h: r.change24h,
+      hasRecord: r.hasRecord,
       marketId: m?.id ?? null,
       window: m?.window ?? null,
     };

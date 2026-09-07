@@ -24,6 +24,15 @@ export interface Row {
   delta30d: number;
   markets: Market[];
   stats: { vol: number; winRate: number; volume30d: number; trades: number };
+  /**
+   * Whether there is enough on record to say how this account moved.
+   *
+   * A handle the leaderboard only started reporting an hour ago has no
+   * history and one reading, and every derived figure for it comes out as
+   * zero. Zero is a claim — that the account did not move — and it is not
+   * one the record supports, so the interface is told to say nothing instead.
+   */
+  hasRecord: boolean;
 }
 
 const RANGE_MS = { "24h": 864e5, "7d": 6048e5, "30d": 2592e6, all: Infinity } as const;
@@ -97,29 +106,41 @@ const changeOver = (snaps: Snapshot[], handle: string, ms: number, now: number) 
   return (cur - then) / base;
 };
 
+/** A day and a bit: everything the board renders reaches back no further. */
+const BOARD_WINDOW_MS = 26 * 60 * 60 * 1000;
+
 export async function board(): Promise<{ rows: Row[]; readAt: string | null; source: string | null }> {
-  const { store, snaps } = await ready();
+  // A render reads; it does not open or settle markets, and it does not need
+  // the nine days of readings a settlement reaches back through.
+  const { store, snaps } = await ready({ manage: false, sinceMs: Date.now() - BOARD_WINDOW_MS });
   const [traders, markets] = await Promise.all([store.getTraders(), store.getMarkets()]);
 
-  // real historical PnL, when a database is holding it
-  let hist: Record<string, Series[]> = {};
-  if (isDurable()) {
-    try {
-      const { getHistory } = await import("./store-postgres");
-      const got = await Promise.all(traders.map(async (t) => [t.handle, await getHistory(t.handle)] as const));
-      hist = Object.fromEntries(got);
-    } catch { hist = {}; }
-  }
   const last = snaps[snaps.length - 1] ?? null;
   const now = last ? new Date(last.t).getTime() : Date.now();
 
-  const rows = traders.map((t) => {
+  // Rank first, then fetch. The record holds every account the leaderboard
+  // reports; the board shows ten of them, and pulling history for the other
+  // ninety was a round trip each for rows nobody was going to see.
+  const ranked = traders
+    .map((t) => ({ t, pnl: lastValue(snaps, t.handle) }))
+    .sort((a, b) => b.pnl - a.pnl)
+    .slice(0, ROSTER_SIZE);
+
+  let hist: Record<string, Series[]> = {};
+  if (isDurable()) {
+    try {
+      const { getHistoryMany } = await import("./store-postgres");
+      hist = await getHistoryMany(ranked.map((r) => r.t.handle));
+    } catch { hist = {}; }
+  }
+
+  const rows = ranked.map(({ t, pnl: latest }) => {
     const live = seriesFor(snaps, t.handle);
     const points = hist[t.handle] ?? [];
     // history first, then anything the keeper has read since
     const series = points.length ? [...points.map((p) => p.pnl), ...live] : live;
     const buckets = bucket(points);
-    const pnl = live.length ? live[live.length - 1] : (points.at(-1)?.pnl ?? 0);
+    const pnl = live.length ? live[live.length - 1] : (points.at(-1)?.pnl ?? latest);
     const wins = series.filter((v, i) => i > 0 && v > series[i - 1]).length;
     return {
       trader: t,
@@ -134,6 +155,8 @@ export async function board(): Promise<{ rows: Row[]; readAt: string | null; sou
       delta24h: deltaOfBucket(buckets["24h"]),
       delta7d: deltaOfBucket(buckets["7d"]),
       delta30d: deltaOfBucket(buckets["30d"].length > 1 ? buckets["30d"] : buckets.all),
+      // two points from somewhere is the least it takes to have moved at all
+      hasRecord: points.length > 1 || live.length > 1,
       markets: markets.filter((m) => m.handle === t.handle && m.status === "open"),
       stats: {
         vol: realisedVol(series),
@@ -142,9 +165,18 @@ export async function board(): Promise<{ rows: Row[]; readAt: string | null; sou
         trades: 0,
       },
     };
-  }).sort((a, b) => b.pnl - a.pnl).slice(0, ROSTER_SIZE);
+  });
 
   return { rows, readAt: last?.t ?? null, source: last?.source ?? null };
+}
+
+/** The newest reading the record holds for a handle, or zero. */
+function lastValue(snaps: Snapshot[], handle: string) {
+  for (let i = snaps.length - 1; i >= 0; i--) {
+    const v = snaps[i].pnl[handle];
+    if (typeof v === "number") return v;
+  }
+  return 0;
 }
 
 export const priceOf = (m: Market, side: "call" | "put") => spotPrice(m.reserves, side);

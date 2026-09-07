@@ -5,7 +5,7 @@ import TraderCard, { Avatar, Verified } from "./TraderCard";
 import Sparkline from "./Sparkline";
 import Reveal from "./Reveal";
 import type { CardMarket } from "./TraderCard";
-import { usdShort, pct, signed, followers as fmtF } from "@/lib/format";
+import { usdShort, moveLabel, followers as fmtF } from "@/lib/format";
 
 type SortKey = "pnl" | "24h" | "7d" | "followers" | "volume";
 type View = "list" | "cards";
@@ -18,6 +18,7 @@ interface RowData {
   delta7d: number;
   change24h: number;
   change7d: number;
+  hasRecord: boolean;
   stats: { vol: number; winRate: number; volume30d: number };
   markets: { id: number; window: string; volume: number; status?: string; reserves?: any }[];
 }
@@ -160,6 +161,7 @@ export default function DiscoverBoard({ rows, priceMap, multipleMap }: Props) {
             const mult = m24 ? multipleMap[m24.id] : undefined;
             const pts = r.history["24h"]?.length ? r.history["24h"] : r.history.all;
             const up = r.delta24h >= 0;
+            const moved = moveLabel({ pnl: r.pnl, delta: r.delta24h, change: r.change24h, hasRecord: r.hasRecord });
             return (
               <Link
                 key={r.trader.handle}
@@ -198,9 +200,14 @@ export default function DiscoverBoard({ rows, priceMap, multipleMap }: Props) {
 
                 <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   <span className="num" style={{ display: "block", fontWeight: 500 }}>{usdShort(r.pnl)}</span>
-                  <span className="num" style={{ fontSize: ".8125rem", color: up ? "var(--up)" : "var(--down)" }}>
-                    {up ? "▲" : "▼"} {move(r.pnl, r.delta24h, r.change24h)}
-                  </span>
+                  {moved === null ? (
+                    <span className="num" title="not enough readings on this account yet"
+                      style={{ fontSize: ".8125rem", color: "var(--fg-faint)" }}>—</span>
+                  ) : (
+                    <span className="num" style={{ fontSize: ".8125rem", color: up ? "var(--up)" : "var(--down)" }}>
+                      {up ? "▲" : "▼"} {moved.replace("+", "").replace("−", "")}
+                    </span>
+                  )}
                 </span>
 
                 <span className="list-quotes" style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
@@ -251,17 +258,6 @@ export default function DiscoverBoard({ rows, priceMap, multipleMap }: Props) {
 
     </>
   );
-}
-
-/**
- * A day's move, as a ratio where the account started the day big enough to
- * carry one and as dollars where it did not. A 400,000% change is arithmetic,
- * not information.
- */
-function move(pnl: number, delta: number, change: number) {
-  const start = pnl - delta;
-  const usable = Math.abs(start) > Math.abs(delta) * 0.1 && Math.abs(start) > 1000;
-  return (usable ? pct(change) : signed(delta)).replace("+", "").replace("\u2212", "");
 }
 
 function Quote({ tone, v }: { tone: "up" | "down"; v: number }) {

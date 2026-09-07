@@ -1,7 +1,10 @@
 import { board, multipleOf, priceOf } from "@/lib/view";
 import DiscoverBoard from "@/components/DiscoverBoard";
 
-export const dynamic = "force-dynamic";
+/* Rendered once and reused for 30s — the book moves on every trade, the record every five minutes.
+   Every click used to be a full server render against the database, which
+   is what made the site feel slow to answer. */
+export const revalidate = 30;
 
 export default async function Discover() {
   const { rows, readAt, source } = await board();
@@ -39,6 +42,7 @@ export default async function Discover() {
           delta24h: r.delta24h,
           delta7d: r.delta7d,
           change24h: r.change24h,
+          hasRecord: r.hasRecord,
           change7d: r.change7d,
           stats: r.stats,
           markets: r.markets,

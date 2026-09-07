@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null) as
-    | { source?: string; t?: string; rows?: { handle: string; pnl: string | number; name?: string; followers?: number; avatar?: string; banner?: string; bio?: string }[] }
+    | { source?: string; t?: string; rows?: { handle: string; pnl: string | number; name?: string; followers?: number; avatar?: string; banner?: string; bio?: string; fomoId?: string }[] }
     | null;
 
   if (!body?.rows?.length) {
@@ -50,6 +50,8 @@ export async function POST(req: Request) {
       avatar: r.avatar,
       banner: r.banner,
       bio: r.bio,
+      // fomo's own id for the account, which is what its history is keyed on
+      fomoId: r.fomoId,
     });
   }
 
@@ -75,8 +77,24 @@ export async function POST(req: Request) {
     new Set(traders.filter((t) => isOptedOut(t.handle)).map((t) => t.handle)),
   );
 
+  /**
+   * Which of the accounts about to be listed have no past to draw.
+   *
+   * The roster follows the leaderboard, so handles rotate in that this
+   * record has never seen. Until one has a history the interface can only
+   * say it moved by nothing, which is a lie of omission — so the reader is
+   * told to go and fetch it, a couple of handles per tick.
+   */
+  let needHistory: string[] = [];
+  try {
+    const { handlesMissingHistory } = await import("@/lib/store-postgres");
+    const listed = (await store.getTraders()).slice(0, ROSTER_SIZE).map((t) => t.handle);
+    needHistory = (await handlesMissingHistory(listed)).slice(0, 2);
+  } catch { needHistory = []; }
+
   return NextResponse.json({
     accepted: Object.keys(pnl).length, rejected,
     at: snapshot.t, snapshots: snaps.length, settled: settled.length,
+    needHistory,
   });
 }

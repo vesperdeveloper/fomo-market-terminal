@@ -2,9 +2,12 @@ import Link from "next/link";
 import { board, multipleOf } from "@/lib/view";
 import { Avatar } from "@/components/TraderCard";
 import Reveal from "@/components/Reveal";
-import { usdShort, pct, followers as fmtF } from "@/lib/format";
+import { usdShort, pct, followers as fmtF, moveLabel } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+/* Rendered once and reused for 60s — ranks follow the reading, not the trading.
+   Every click used to be a full server render against the database, which
+   is what made the site feel slow to answer. */
+export const revalidate = 60;
 
 export default async function Leaderboard() {
   const { rows, readAt, source } = await board();
@@ -51,8 +54,11 @@ export default async function Leaderboard() {
                 </span>
                 <span>
                   <span className="eyebrow" style={{ display: "block" }}>24h</span>
-                  <span className="num" style={{ fontWeight: 600, color: r.change24h >= 0 ? "var(--up)" : "var(--down)" }}>
-                    {pct(r.change24h)}
+                  <span className="num" style={{
+                    fontWeight: 600,
+                    color: !r.hasRecord ? "var(--fg-faint)" : r.change24h >= 0 ? "var(--up)" : "var(--down)",
+                  }}>
+                    {moveLabel({ pnl: r.pnl, delta: r.delta24h, change: r.change24h, hasRecord: r.hasRecord }) ?? "—"}
                   </span>
                 </span>
                 {m && (

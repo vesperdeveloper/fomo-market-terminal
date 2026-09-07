@@ -26,6 +26,7 @@ Environment:
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 
 from curl_cffi import requests
@@ -97,8 +98,8 @@ def access_token(refresh):
     return token
 
 
-def leaderboard(token):
-    headers = {
+def api_headers(token):
+    return {
         "authorization": f"Bearer {token}",
         "app-language": "en",
         "x-supported-chains": "1,56,143,4663,8453,1399811149",
@@ -107,11 +108,83 @@ def leaderboard(token):
         "referer": "https://fomo.family/",
         "user-agent": UA,
     }
-    r = requests.get("https://prod-api.fomo.family/v2/leaderboard", headers=headers,
+
+
+def leaderboard(token):
+    r = requests.get("https://prod-api.fomo.family/v2/leaderboard", headers=api_headers(token),
                      impersonate=IMPERSONATE, timeout=45)
     if r.status_code != 200:
         sys.exit(f"leaderboard read failed: {r.status_code} {r.text[:200]}")
     return r.json()
+
+
+HOUR = 3600
+EIGHT_HOURS = 8 * HOUR
+
+
+def snapshot_at(token, user_id, when):
+    """
+    One reading of an account's cumulative PnL at a moment.
+
+    fomo keeps these on an aligned grid — hourly is the finest that answers,
+    and the hour currently in progress comes back as zero because it has not
+    been computed yet. So callers ask for whole hours, in the past.
+    """
+    url = ("https://prod-api.fomo.family/v2/userTokens/aggregatedSnapshotById"
+           f"?userId={user_id}&snapshotId={when}")
+    r = requests.get(url, headers=api_headers(token), impersonate=IMPERSONATE, timeout=45)
+    if r.status_code != 200:
+        return None
+    body = (r.json() or {}).get("responseObject") or {}
+    pnl = body.get("pnl")
+    # a zero here means "no reading", not "flat": a live account is never
+    # exactly zero, and the current hour always answers this way
+    return pnl if isinstance(pnl, (int, float)) and pnl != 0 else None
+
+
+def history_for(token, user_id, days=30):
+    """
+    Enough past to draw a line.
+
+    Dense where the interface is dense — hourly over the last two days, which
+    is what the 24h chart and the day's move are read from — and every eight
+    hours before that, which is as coarse as a month can be without the line
+    turning into a staircase. Roughly 130 requests, once per account, ever.
+    """
+    now = int(time.time())
+    hour = now // HOUR * HOUR
+    wanted = [hour - k * HOUR for k in range(1, 49)]
+    eight = hour // EIGHT_HOURS * EIGHT_HOURS
+    wanted += [eight - k * EIGHT_HOURS for k in range(6, days * 3)]
+
+    points = []
+    for when in sorted(set(wanted)):
+        pnl = snapshot_at(token, user_id, when)
+        if pnl is not None:
+            points.append({"t": datetime.fromtimestamp(when, timezone.utc)
+                           .isoformat(timespec="seconds").replace("+00:00", "Z"),
+                           "pnl": pnl})
+    return points
+
+
+def backfill(token, handles, ids):
+    """Fetch and push the past for handles the site says it is missing."""
+    series = []
+    for h in handles:
+        uid = ids.get(h)
+        if not uid:
+            print(f"  {h}: no user id in the leaderboard, skipping")
+            continue
+        pts = history_for(token, uid)
+        print(f"  {h}: {len(pts)} points" + (f"  {pts[0]['t'][:10]} .. {pts[-1]['t'][:10]}" if pts else ""))
+        if pts:
+            series.append({"handle": h, "points": pts})
+    if not series:
+        return
+    r = requests.post(f"{SITE}/api/keeper/history",
+                      headers={**auth, "content-type": "application/json"},
+                      json={"series": series}, timeout=120)
+    print(f"  history -> {r.status_code} {r.text[:200]}")
 
 
 def rows_from(payload):
@@ -128,6 +201,7 @@ def rows_from(payload):
             continue
         out.append({
             "handle": handle,
+            "fomoId": u.get("id"),
             "pnl": pnl,
             "name": u.get("displayName") or handle,
             "followers": u.get("followers") or 0,
@@ -145,7 +219,8 @@ def main():
     if not refresh:
         sys.exit("no refresh token anywhere — set PRIVY_REFRESH_TOKEN once")
 
-    rows = rows_from(leaderboard(access_token(refresh)))
+    token = access_token(refresh)
+    rows = rows_from(leaderboard(token))
     if not rows:
         sys.exit("no usable rows in the reading")
 
@@ -158,6 +233,17 @@ def main():
     # the ingest endpoint opens what is missing and settles what is due, so
     # one call is the whole tick
     print(f"{at}  {len(rows)} rows -> {ingest.status_code} {ingest.text[:300]}")
+
+    # the site names the listed accounts it has no past for; fetching one
+    # costs a hundred-odd requests, so it is done a couple at a time rather
+    # than holding up the reading everybody else is waiting on
+    try:
+        need = (ingest.json() or {}).get("needHistory") or []
+    except Exception:
+        need = []
+    if need:
+        print(f"backfilling history for {need}")
+        backfill(token, need, {r["handle"]: r.get("fomoId") for r in rows})
 
     if ingest.status_code >= 400:
         sys.exit(1)

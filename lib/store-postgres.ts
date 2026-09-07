@@ -278,21 +278,60 @@ export async function getHistory(handle: string, sinceMs?: number) {
   return rows.map((r) => ({ t: new Date(r.t).toISOString(), pnl: r.pnl as number }));
 }
 
+/**
+ * History for several handles at once.
+ *
+ * The board used to ask for this one handle at a time, which is a round trip
+ * per row: with a hundred accounts in the record that was a hundred queries
+ * on every page render, and most of the second the page took to draw.
+ */
+export async function getHistoryMany(handles: string[], sinceMs?: number) {
+  if (!handles.length) return {} as Record<string, { t: string; pnl: number }[]>;
+  await migrate();
+  const { rows } = sinceMs
+    ? await db().query(
+        `SELECT handle, t, pnl FROM history WHERE handle = ANY($1) AND t >= $2 ORDER BY handle, t ASC`,
+        [handles, new Date(sinceMs).toISOString()])
+    : await db().query(
+        `SELECT handle, t, pnl FROM history WHERE handle = ANY($1) ORDER BY handle, t ASC`,
+        [handles]);
+  const out: Record<string, { t: string; pnl: number }[]> = {};
+  for (const r of rows) {
+    (out[r.handle] ??= []).push({ t: new Date(r.t).toISOString(), pnl: r.pnl as number });
+  }
+  return out;
+}
+
+/** Handles that have fewer than `min` points on record. */
+export async function handlesMissingHistory(handles: string[], min = 24) {
+  if (!handles.length) return [];
+  await migrate();
+  const { rows } = await db().query(
+    `SELECT h AS handle, coalesce(c.n, 0)::int AS n
+       FROM unnest($1::text[]) h
+       LEFT JOIN (SELECT handle, count(*) n FROM history GROUP BY handle) c ON c.handle = h
+      WHERE coalesce(c.n, 0) < $2`,
+    [handles, min]);
+  return rows.map((r) => r.handle as string);
+}
+
+/**
+ * Write a handle's history in one statement.
+ *
+ * A backfill is a hundred-odd points; inserting them one at a time is a
+ * hundred round trips to a database three thousand miles away, which is long
+ * enough for a serverless function to give up halfway through.
+ */
 export async function putHistory(handle: string, points: { t: string; pnl: number }[]) {
   if (!points.length) return 0;
   await migrate();
-  const c = await db().connect();
-  try {
-    await c.query("BEGIN");
-    for (const p of points) {
-      await c.query(
-        `INSERT INTO history (handle, t, pnl) VALUES ($1,$2,$3)
-         ON CONFLICT (handle, t) DO UPDATE SET pnl = EXCLUDED.pnl`,
-        [handle, p.t, p.pnl]);
-    }
-    await c.query("COMMIT");
-  } catch (e) { await c.query("ROLLBACK"); throw e; }
-  finally { c.release(); }
+  await db().query(
+    `INSERT INTO history (handle, t, pnl)
+     SELECT $1, t::timestamptz, pnl::double precision
+       FROM unnest($2::text[], $3::double precision[]) AS s(t, pnl)
+     ON CONFLICT (handle, t) DO UPDATE SET pnl = EXCLUDED.pnl`,
+    [handle, points.map((p) => p.t), points.map((p) => p.pnl)],
+  );
   return points.length;
 }
 

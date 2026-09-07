@@ -20,3 +20,23 @@ export const initials = (s: string) => s.replace(/[^A-Za-z0-9]/g, "").slice(0, 2
 
 /** Signed dollar move, compact. The safe way to show a change in PnL. */
 export const signed = (n: number) => (n >= 0 ? "+" : "\u2212") + usdShort(Math.abs(n)).replace("-", "");
+
+/**
+ * A window's move, as the record can actually support it.
+ *
+ * Three cases, in order. Without two readings there is nothing to compare,
+ * and the honest answer is a dash — a confident "+0.0%" on an account the
+ * leaderboard only started reporting an hour ago is a claim the record does
+ * not make. With a starting value big enough to divide by, a ratio. And
+ * where the account started near zero, the dollar move, because a ratio
+ * against a near-zero base is arithmetic rather than information.
+ */
+export function moveLabel(
+  opts: { pnl: number; delta: number; change: number; hasRecord?: boolean },
+): string | null {
+  const { pnl, delta, change, hasRecord = true } = opts;
+  if (!hasRecord) return null;
+  const start = pnl - delta;
+  const usable = Math.abs(start) > Math.abs(delta) * 0.1 && Math.abs(start) > 1000;
+  return usable ? pct(change) : signed(delta);
+}
