@@ -49,7 +49,7 @@ export default function Nav() {
         </Link>
 
         <a
-          href="https://x.com/"
+          href="https://x.com/usefomo_market"
           target="_blank"
           rel="noopener noreferrer"
           aria-label="fomo market on X"
