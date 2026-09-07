@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
+import { ready } from "@/lib/runtime";
 import { board } from "@/lib/view";
-import { readMarket } from "@/lib/onchain";
 import Ticket from "@/components/Ticket";
 import MarketRail, { type RailRow } from "@/components/MarketRail";
 
@@ -14,8 +14,9 @@ export default async function MarketPage({
 }) {
   const { id } = await params;
   const { side } = await searchParams;
+  const { store } = await ready();
 
-  const market = await readMarket(Number(id));
+  const market = (await store.getMarkets()).find((m) => m.id === Number(id));
   if (!market) notFound();
 
   const { rows } = await board();
@@ -54,7 +55,7 @@ export default async function MarketPage({
         <MarketRail rows={rail} activeId={market.id} />
         <div style={{ minWidth: 0 }}>
           <Ticket
-            market={market}
+            market={JSON.parse(JSON.stringify(market))}
             trader={row.trader}
             history={row.history}
             initialSide={side === "put" ? "put" : "call"}

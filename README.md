@@ -11,8 +11,6 @@ Mono on every figure, near-square corners, hairline rules instead of cards,
 and a live readout where an illustration would be. Same family, not a copy.
 
     npm run dev                   # localhost:3082
-    node scripts/compile.mjs      # contracts -> lib/artifacts.ts
-    node scripts/deploy-contract.mjs
     node scripts/brand.mjs        # marks + link-preview card
 
 The reader runs once, from the other build's repository, and writes to the

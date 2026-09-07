@@ -23,9 +23,7 @@
     "@types/node": "24.5.2",
     "@types/pg": "^8.23.1",
     "@types/react": "19.1.13",
-    "hardhat": "^2.29.1",
     "playwright": "^1.62.1",
-    "solc": "^0.8.26",
     "tailwindcss": "4.1.13",
     "typescript": "5.9.2"
   }

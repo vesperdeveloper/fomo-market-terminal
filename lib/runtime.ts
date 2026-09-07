@@ -1,7 +1,8 @@
-import { getStore } from "./store";
+import { getStore, isDurable } from "./store";
 import { SimAdapter } from "./keeper/sim";
 import { FomoAdapter } from "./keeper/fomo";
 import type { KeeperAdapter } from "./keeper/types";
+import { ensureMarkets, settleDue, ROSTER_SIZE } from "./markets";
 import type { Trader } from "./types";
 
 /** Accounts the markets are written on. Held here so the roster is one
@@ -26,9 +27,7 @@ export function adapter(): KeeperAdapter {
   return fomo.configured ? fomo : new SimAdapter(ROSTER);
 }
 
-const optedOut = new Set<string>(
-  (process.env.OPTED_OUT ?? "").split(",").map((s) => s.trim()).filter(Boolean),
-);
+const optedOut = new Set<string>();
 export function optOut(handle: string) { optedOut.add(handle); }
 export function isOptedOut(h: string) { return optedOut.has(h); }
 
@@ -37,14 +36,6 @@ let booted = false;
 /** A source that is not the local simulator. */
 const isReal = (source: string) => !source.startsWith("sim://");
 
-/**
- * The record, ready to read.
- *
- * This used to open and settle markets as a side effect of rendering a page.
- * It no longer does: markets live in a contract now, and the only thing that
- * touches them is the oracle, on its own schedule. What is left here is the
- * evidence and the roster.
- */
 export async function ready() {
   const store = getStore();
   if (!booted) {
@@ -62,6 +53,7 @@ export async function ready() {
       for (let i = 0; i < 6; i++) {
         try {
           const { snapshot } = await a.read();
+          if (isReal(snapshot.source)) { await store.appendSnapshot(snapshot); continue; }
           await store.appendSnapshot(snapshot);
         } catch { break; }
       }
@@ -69,5 +61,24 @@ export async function ready() {
     }
   }
   const snaps = await store.listSnapshots();
+  const traders = await store.getTraders();
+
+  // the opening prior is estimated from each account's own history, so the
+  // two sides of a new market rarely start level
+  let seriesOf: ((h: string) => { t: string; pnl: number }[]) | undefined;
+  if (isDurable()) {
+    try {
+      const { getHistory } = await import("./store-postgres");
+      const pairs = await Promise.all(
+        traders.slice(0, ROSTER_SIZE).map(async (t) =>
+          [t.handle, await getHistory(t.handle)] as const),
+      );
+      const m = Object.fromEntries(pairs);
+      seriesOf = (h) => m[h] ?? [];
+    } catch { seriesOf = undefined; }
+  }
+
+  await ensureMarkets(store, traders.slice(0, ROSTER_SIZE), snaps, new Date(), seriesOf);
+  await settleDue(store, snaps, optedOut);
   return { store, snaps };
 }

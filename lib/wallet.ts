@@ -4,12 +4,7 @@ import {
   erc20Abi, getAddress, parseUnits,
   type Address, type Hash,
 } from "viem";
-import { chain, USDG, USDG_DECIMALS, marketAddress } from "./chain";
-import { artifacts } from "./artifacts";
-import { SIDE_INDEX } from "./onchain";
-import type { Side } from "./types";
-
-const marketAbi = artifacts.FomoMarket.abi;
+import { robinhood, USDG, USDG_DECIMALS } from "./chain";
 
 type Eip1193 = {
   request(a: { method: string; params?: unknown[] }): Promise<unknown>;
@@ -24,9 +19,9 @@ export function injected(): Eip1193 | null {
 
 export const hasWallet = () => Boolean(injected());
 
-const CHAIN_HEX = `0x${chain.id.toString(16)}`;
+const CHAIN_HEX = `0x${robinhood.id.toString(16)}`;
 
-/** Connect, and make sure the wallet is actually on the right chain. */
+/** Connect, and make sure the wallet is actually on Robinhood Chain. */
 export async function connect(): Promise<Address> {
   const eth = injected();
   if (!eth) throw new Error("no wallet found in this browser");
@@ -49,10 +44,10 @@ export async function connect(): Promise<Address> {
         method: "wallet_addEthereumChain",
         params: [{
           chainId: CHAIN_HEX,
-          chainName: chain.name,
-          nativeCurrency: chain.nativeCurrency,
-          rpcUrls: [chain.rpcUrls.default.http[0]],
-          blockExplorerUrls: [chain.blockExplorers!.default.url],
+          chainName: robinhood.name,
+          nativeCurrency: robinhood.nativeCurrency,
+          rpcUrls: [robinhood.rpcUrls.default.http[0]],
+          blockExplorerUrls: [robinhood.blockExplorers.default.url],
         }],
       });
     }
@@ -69,9 +64,7 @@ export async function currentAccount(): Promise<Address | null> {
   } catch { return null; }
 }
 
-const reader = () => createPublicClient({ chain, transport: http() });
-
-const units = (usd: number) => parseUnits(usd.toFixed(USDG_DECIMALS), USDG_DECIMALS);
+const reader = () => createPublicClient({ chain: robinhood, transport: http() });
 
 /** The wallet's USDG balance, so a ticket it cannot afford says so first. */
 export async function usdgBalance(owner: Address): Promise<number> {
@@ -81,90 +74,30 @@ export async function usdgBalance(owner: Address): Promise<number> {
   return Number(bal) / 10 ** USDG_DECIMALS;
 }
 
-/** What the contract is currently allowed to pull. */
-export async function usdgAllowance(owner: Address): Promise<number> {
-  const market = marketAddress();
-  if (!market) return 0;
-  const a = await reader().readContract({
-    address: USDG, abi: erc20Abi, functionName: "allowance", args: [owner, market],
-  });
-  return Number(a) / 10 ** USDG_DECIMALS;
-}
-
-async function walletClient() {
+/**
+ * Send `usd` USDG to the treasury and wait for it to be mined.
+ *
+ * The server re-reads this receipt before it hands out any shares, so the
+ * wait is not decoration: submitting a hash that has not landed yet would
+ * simply be refused.
+ */
+export async function payUSDG(to: string, usd: number): Promise<Hash> {
   const eth = injected();
   if (!eth) throw new Error("no wallet found in this browser");
   const account = await connect();
-  return { account, wallet: createWalletClient({ account, chain, transport: custom(eth) }) };
-}
 
-/**
- * Let the contract pull `usd` from this wallet.
- *
- * Approving exactly the ticket rather than an unlimited allowance: the extra
- * signature is cheap, and an allowance that outlives the trade is a standing
- * permission nobody asked for.
- */
-export async function approveUSDG(usd: number): Promise<Hash> {
-  const market = marketAddress();
-  if (!market) throw new Error("no market contract configured");
-  const { account, wallet } = await walletClient();
+  const wallet = createWalletClient({
+    account, chain: robinhood, transport: custom(eth),
+  });
 
   const hash = await wallet.writeContract({
-    address: USDG, abi: erc20Abi, functionName: "approve",
-    args: [market, units(usd)],
-    chain, account,
+    address: USDG, abi: erc20Abi, functionName: "transfer",
+    args: [getAddress(to), parseUnits(usd.toFixed(USDG_DECIMALS), USDG_DECIMALS)],
+    chain: robinhood, account,
   });
+
   const receipt = await reader().waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("the approval reverted on chain");
-  return hash;
-}
-
-/**
- * Take a side. The stake moves into the contract in this transaction — there
- * is no moment where the site is holding the money, because the site never
- * holds it.
- */
-export async function stakeOnChain(marketId: number, side: Side, usd: number): Promise<Hash> {
-  const market = marketAddress();
-  if (!market) throw new Error("no market contract configured");
-  const { account, wallet } = await walletClient();
-
-  const hash = await wallet.writeContract({
-    address: market, abi: marketAbi, functionName: "stake",
-    args: [BigInt(marketId), SIDE_INDEX[side], units(usd)],
-    chain, account,
-  });
-  const receipt = await reader().waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("the ticket reverted on chain");
-  return hash;
-}
-
-/** Collect a settled position or a refund. */
-export async function claimOnChain(marketId: number): Promise<Hash> {
-  const market = marketAddress();
-  if (!market) throw new Error("no market contract configured");
-  const { account, wallet } = await walletClient();
-
-  const hash = await wallet.writeContract({
-    address: market, abi: marketAbi, functionName: "claim",
-    args: [BigInt(marketId)],
-    chain, account,
-  });
-  const receipt = await reader().waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("the claim reverted on chain");
-  return hash;
-}
-
-/** Testnet only: the stand-in USDG hands out play money to anybody. */
-export async function faucetUSDG(): Promise<Hash> {
-  const { account, wallet } = await walletClient();
-  const hash = await wallet.writeContract({
-    address: USDG,
-    abi: [{ type: "function", name: "faucet", inputs: [], outputs: [], stateMutability: "nonpayable" }],
-    functionName: "faucet", args: [], chain, account,
-  });
-  await reader().waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("the payment reverted on chain");
   return hash;
 }
 

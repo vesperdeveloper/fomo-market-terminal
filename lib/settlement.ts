@@ -8,9 +8,7 @@ export const SETTLEMENT_SNAPSHOTS = 3;
 export const RESOLVER_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const FEE_BPS = 200;            // 2%, on winnings only
-/** Where the fee goes, as the contract splits it. Half is held for the
- *  account the market was written on; the rest is the venue's. */
-export const FEE_SPLIT = { traderEscrow: 50, venue: 50 };
+export const FEE_SPLIT = { burn: 40, holders: 40, traderEscrow: 10, liquidity: 10 };
 
 const ms = (iso: string) => new Date(iso).getTime();
 const median = (xs: number[]) => {
@@ -91,10 +89,24 @@ export function resolve(
   };
 }
 
+/** Gross redemption, fee, and what actually lands in the wallet. */
+export function redeem(shares: number, cost: number, won: boolean) {
+  if (!won) return { gross: 0, winnings: 0, fee: 0, net: 0 };
+  const gross = shares;                       // each share redeems for exactly 1
+  const winnings = Math.max(0, gross - cost); // fee base excludes the stake
+  const fee = (winnings * FEE_BPS) / 10_000;
+  return { gross, winnings, fee, net: gross - fee };
+}
+
 /** Where the fee goes, for the receipt shown on the docs page. */
 export function feeSplit(fee: number) {
   const pct = (n: number) => (fee * n) / 100;
-  return { traderEscrow: pct(FEE_SPLIT.traderEscrow), venue: pct(FEE_SPLIT.venue) };
+  return {
+    burn: pct(FEE_SPLIT.burn),
+    holders: pct(FEE_SPLIT.holders),
+    traderEscrow: pct(FEE_SPLIT.traderEscrow),
+    liquidity: pct(FEE_SPLIT.liquidity),
+  };
 }
 
 /**

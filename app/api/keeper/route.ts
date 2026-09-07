@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
-import { adapter, ready } from "@/lib/runtime";
+import { adapter, ready, isOptedOut } from "@/lib/runtime";
+import { settleDue, ensureMarkets, ROSTER_SIZE } from "@/lib/markets";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,12 @@ export async function GET() {
   }
 
   const snaps = await store.listSnapshots();
+  const traders = await store.getTraders();
+  await ensureMarkets(store, traders.slice(0, ROSTER_SIZE), snaps);
+  const settled = await settleDue(store, snaps, new Set(traders.filter(t => isOptedOut(t.handle)).map(t => t.handle)));
 
-  // opening and settling markets is the oracle's job, on its own schedule:
-  // this endpoint only writes down what was read
-  return NextResponse.json({ source: a.name, recorded, error, snapshots: snaps.length });
+  return NextResponse.json({
+    source: a.name, recorded, error,
+    snapshots: snaps.length, settled: settled.length,
+  });
 }

@@ -1,13 +1,10 @@
 import { ready } from "./runtime";
 import { ROSTER_SIZE } from "./markets";
-import { readMarkets } from "./onchain";
-import { impliedPrice, multiple } from "./pool";
+import { spotPrice, quoteBuy, QUOTE_STAKE } from "./amm";
+import { netMultiple } from "./prior";
 import { valueAt } from "./settlement";
-import type { Market, Side, Snapshot, Trader } from "./types";
+import type { Market, Snapshot, Trader } from "./types";
 import { isDurable } from "./store";
-
-/** The ticket every quoted multiple on the site is quoted for. */
-export const QUOTE_STAKE = 100;
 
 export interface Series { t: string; pnl: number }
 
@@ -102,8 +99,7 @@ const changeOver = (snaps: Snapshot[], handle: string, ms: number, now: number) 
 
 export async function board(): Promise<{ rows: Row[]; readAt: string | null; source: string | null }> {
   const { store, snaps } = await ready();
-  // the book is the contract; the database only holds who is listed
-  const [traders, markets] = await Promise.all([store.getTraders(), readMarkets()]);
+  const [traders, markets] = await Promise.all([store.getTraders(), store.getMarkets()]);
 
   // real historical PnL, when a database is holding it
   let hist: Record<string, Series[]> = {};
@@ -151,12 +147,13 @@ export async function board(): Promise<{ rows: Row[]; readAt: string | null; sou
   return { rows, readAt: last?.t ?? null, source: last?.source ?? null };
 }
 
-/** A side's share of the pot, which is what the book thinks the odds are. */
-export const priceOf = (m: Market, side: Side) => impliedPrice(m.pools, side);
+export const priceOf = (m: Market, side: "call" | "put") => spotPrice(m.reserves, side);
 
 /**
- * The multiple a card should show: what a real ticket on this book returns
- * after the fee, with the ticket itself already counted in the pot.
+ * The multiple a card should show: what a real ticket returns after the
+ * redemption fee, not the gross ratio. A flat book quotes 1.98x, not 2.00x.
  */
-export const multipleOf = (m: Market, side: Side, stake = QUOTE_STAKE) =>
-  multiple(m.pools, side, stake);
+export const multipleOf = (m: Market, side: "call" | "put", stake = QUOTE_STAKE) => {
+  try { return netMultiple(quoteBuy(m.reserves, side, stake).shares, stake); }
+  catch { return 1; }
+};

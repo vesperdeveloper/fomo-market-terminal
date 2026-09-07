@@ -1,6 +1,7 @@
-import { Pool } from "pg";
-import type { Snapshot, Trader } from "./types";
+import { Pool, type PoolClient } from "pg";
+import type { Market, Position, Side, Snapshot, Trader } from "./types";
 import type { Store } from "./store";
+import { quoteBuy, quoteSell } from "./amm";
 
 let pool: Pool | null = null;
 function db(): Pool {
@@ -50,18 +51,81 @@ export function migrate(): Promise<void> {
       );
       ALTER TABLE traders ADD COLUMN IF NOT EXISTS fomo_id text;
 
-      -- The reader's refresh token. It rotates on every use, so it cannot
-      -- live in an environment variable: whoever refreshes has to write the
-      -- next one back somewhere both the reader and the site can reach.
+      CREATE TABLE IF NOT EXISTS markets (
+        id           integer PRIMARY KEY,
+        handle       text        NOT NULL,
+        "window"     text        NOT NULL,
+        opens_at     timestamptz NOT NULL,
+        closes_at    timestamptz NOT NULL,
+        status       text        NOT NULL,
+        strike       double precision,
+        settle_value double precision,
+        winner       text,
+        void_reason  text,
+        reserve_call double precision NOT NULL,
+        reserve_put  double precision NOT NULL,
+        volume       double precision NOT NULL DEFAULT 0,
+        seed         double precision NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS markets_handle_idx ON markets (handle, status);
+
+      CREATE TABLE IF NOT EXISTS positions (
+        id         text PRIMARY KEY,
+        owner      text        NOT NULL,
+        market_id  integer     NOT NULL REFERENCES markets(id),
+        side       text        NOT NULL,
+        shares     double precision NOT NULL,
+        cost       double precision NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        claimed_at timestamptz,
+        payout     double precision
+      );
+      CREATE INDEX IF NOT EXISTS positions_owner_idx ON positions (owner);
+
+      ALTER TABLE positions ADD COLUMN IF NOT EXISTS deposit_tx text;
+      ALTER TABLE positions ADD COLUMN IF NOT EXISTS payout_tx  text;
+
+      -- One payment, one ticket. The primary key is what actually enforces
+      -- this: two requests replaying the same transfer race to insert the
+      -- same row and exactly one of them wins, which an application-level
+      -- "have I seen this?" check could not guarantee.
+      -- The reader's refresh token. It rotates on use, so it cannot live in
+      -- an environment variable: whoever refreshes has to write the next one
+      -- back somewhere both the reader and the site can reach.
       CREATE TABLE IF NOT EXISTS keeper_session (
         id            integer PRIMARY KEY,
         refresh_token text NOT NULL,
         updated_at    timestamptz NOT NULL DEFAULT now()
       );
+
+      CREATE TABLE IF NOT EXISTS spent_tx (
+        hash    text PRIMARY KEY,
+        spent_at timestamptz NOT NULL DEFAULT now()
+      );
     `);
   })();
   return ready;
 }
+
+const toMarket = (r: any): Market => ({
+  id: r.id, handle: r.handle, window: r.window,
+  opensAt: new Date(r.opens_at).toISOString(),
+  closesAt: new Date(r.closes_at).toISOString(),
+  status: r.status, strike: r.strike, settleValue: r.settle_value,
+  winner: r.winner, voidReason: r.void_reason,
+  reserves: { call: r.reserve_call, put: r.reserve_put },
+  volume: r.volume, seed: r.seed,
+});
+
+const toPosition = (r: any): Position => ({
+  id: r.id, owner: r.owner, marketId: r.market_id, side: r.side,
+  shares: r.shares, cost: r.cost,
+  createdAt: new Date(r.created_at).toISOString(),
+  claimedAt: r.claimed_at ? new Date(r.claimed_at).toISOString() : undefined,
+  payout: r.payout ?? undefined,
+  depositTx: r.deposit_tx ?? undefined,
+  payoutTx: r.payout_tx ?? undefined,
+});
 
 export const postgresStore: Store = {
   async appendSnapshot(s) {
@@ -102,7 +166,7 @@ export const postgresStore: Store = {
       handle: r.handle, name: r.name, bio: r.bio ?? undefined,
       followers: r.followers, avatar: r.avatar ?? undefined, banner: r.banner ?? undefined,
       fomoId: r.fomo_id ?? undefined,
-    }));
+    } as Trader));
   },
 
   async putTraders(list) {
@@ -124,7 +188,7 @@ export const postgresStore: Store = {
              rank = EXCLUDED.rank,
              fomo_id = COALESCE(EXCLUDED.fomo_id, traders.fomo_id)`,
           [t.handle, t.name, t.bio ?? null, t.followers, t.avatar ?? null, t.banner ?? null, i,
-           t.fomoId ?? null],
+           (t as any).fomoId ?? null],
         );
       }
       await c.query("COMMIT");
@@ -146,6 +210,60 @@ export const postgresStore: Store = {
        ON CONFLICT (id) DO UPDATE SET refresh_token = EXCLUDED.refresh_token, updated_at = now()`,
       [refreshToken],
     );
+  },
+
+  async getMarkets() {
+    await migrate();
+    const { rows } = await db().query(`SELECT * FROM markets ORDER BY id ASC`);
+    return rows.map(toMarket);
+  },
+
+  async putMarket(m) {
+    await migrate();
+    await db().query(
+      `INSERT INTO markets (id, handle, "window", opens_at, closes_at, status, strike,
+                            settle_value, winner, void_reason, reserve_call, reserve_put, volume, seed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       ON CONFLICT (id) DO UPDATE SET
+         status = EXCLUDED.status, strike = EXCLUDED.strike,
+         settle_value = EXCLUDED.settle_value, winner = EXCLUDED.winner,
+         void_reason = EXCLUDED.void_reason, reserve_call = EXCLUDED.reserve_call,
+         reserve_put = EXCLUDED.reserve_put, volume = EXCLUDED.volume`,
+      [m.id, m.handle, m.window, m.opensAt, m.closesAt, m.status, m.strike,
+       m.settleValue, m.winner, m.voidReason, m.reserves.call, m.reserves.put, m.volume, m.seed],
+    );
+  },
+
+  async getPositions(owner) {
+    await migrate();
+    const { rows } = owner
+      ? await db().query(`SELECT * FROM positions WHERE owner = $1 ORDER BY created_at ASC`, [owner])
+      : await db().query(`SELECT * FROM positions ORDER BY created_at ASC`);
+    return rows.map(toPosition);
+  },
+
+  async putPosition(p) {
+    await migrate();
+    await db().query(
+      `INSERT INTO positions (id, owner, market_id, side, shares, cost, created_at, claimed_at, payout, deposit_tx, payout_tx)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (id) DO UPDATE SET
+         shares = EXCLUDED.shares, cost = EXCLUDED.cost,
+         claimed_at = EXCLUDED.claimed_at, payout = EXCLUDED.payout,
+         payout_tx = EXCLUDED.payout_tx`,
+      [p.id, p.owner, p.marketId, p.side, p.shares, p.cost,
+       p.createdAt, p.claimedAt ?? null, p.payout ?? null,
+       p.depositTx ?? null, p.payoutTx ?? null],
+    );
+  },
+
+  async claimDepositTx(hash) {
+    await migrate();
+    const { rowCount } = await db().query(
+      `INSERT INTO spent_tx (hash) VALUES ($1) ON CONFLICT (hash) DO NOTHING`,
+      [hash.toLowerCase()],
+    );
+    return rowCount === 1;
   },
 };
 
@@ -185,4 +303,72 @@ export async function historyCoverage() {
     `SELECT handle, count(*)::int n, min(t) f, max(t) l FROM history GROUP BY handle`);
   return rows.map((r) => ({ handle: r.handle, n: r.n,
     from: new Date(r.f).toISOString(), to: new Date(r.l).toISOString() }));
+}
+
+/**
+ * Buy inside a transaction.
+ *
+ * The reserve update is a read-modify-write on shared state, so it cannot be
+ * done as a plain read followed by a plain write: two buys landing together
+ * would both price off the same starting reserves and the second would
+ * overwrite the first, breaking the invariant and minting collateral that
+ * was never deposited. The row is locked for the duration instead.
+ */
+export async function tradeAtomic(
+  marketId: number, side: Side, amount: number, owner: string,
+  depositTx?: string,
+): Promise<{ position: Position; avgPrice: number; priceAfter: number }> {
+  await migrate();
+  const c: PoolClient = await db().connect();
+  try {
+    await c.query("BEGIN");
+
+    // Spending the payment happens in the same transaction that hands out
+    // the shares, so a replayed hash cannot buy a second ticket even if two
+    // requests arrive at the same instant: one insert wins, the other rolls
+    // the whole trade back.
+    if (depositTx) {
+      const claim = await c.query(
+        `INSERT INTO spent_tx (hash) VALUES ($1) ON CONFLICT (hash) DO NOTHING`,
+        [depositTx.toLowerCase()],
+      );
+      if (claim.rowCount !== 1) throw new Error("that payment has already been used");
+    }
+
+    const { rows } = await c.query(`SELECT * FROM markets WHERE id = $1 FOR UPDATE`, [marketId]);
+    if (!rows.length) throw new Error("no such market");
+    const m = toMarket(rows[0]);
+    if (m.status !== "open") throw new Error(`market is ${m.status}`);
+
+    const q = quoteBuy(m.reserves, side, amount);
+    const slip = Math.abs(q.avgPrice - q.priceBefore);
+    if (slip > 0.05) throw new Error("size too large for current depth");
+
+    await c.query(
+      `UPDATE markets SET reserve_call = $1, reserve_put = $2, volume = volume + $3 WHERE id = $4`,
+      [q.reserves.call, q.reserves.put, amount, marketId],
+    );
+
+    const id = `${marketId}-${side}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await c.query(
+      `INSERT INTO positions (id, owner, market_id, side, shares, cost, deposit_tx)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, owner, marketId, side, q.shares, amount, depositTx ?? null],
+    );
+
+    await c.query("COMMIT");
+    return {
+      position: {
+        id, owner, marketId, side, shares: q.shares, cost: amount,
+        createdAt: new Date().toISOString(), depositTx,
+      },
+      avgPrice: q.avgPrice,
+      priceAfter: q.priceAfter,
+    };
+  } catch (e) {
+    await c.query("ROLLBACK");
+    throw e;
+  } finally {
+    c.release();
+  }
 }

@@ -5,8 +5,7 @@ import MedianDiagram from "@/components/MedianDiagram";
 import {
   FEE_BPS, FEE_SPLIT, MAX_SNAPSHOT_AGE_MS, SETTLEMENT_SNAPSHOTS, RESOLVER_GRACE_MS,
 } from "@/lib/settlement";
-import { ROSTER_SIZE, WINDOWS } from "@/lib/markets";
-import { multiple } from "@/lib/pool";
+import { SEED_PER_MARKET, ROSTER_SIZE, WINDOWS } from "@/lib/markets";
 import { usd, cents } from "@/lib/format";
 
 export const metadata = { title: "Docs · fomo market" };
@@ -16,8 +15,8 @@ const SECTIONS: [string, string][] = [
   ["underlying", "What settles a market"],
   ["prices", "Where the number comes from"],
   ["resolution", "Snapshots and the median rule"],
-  ["odds", "Where the odds come from"],
-  ["contract", "The contract"],
+  ["odds", "How the odds open"],
+  ["amm", "How the price moves"],
   ["payout", "What you get paid"],
   ["void", "When a market voids"],
   ["traders", "If you are the subject"],
@@ -111,77 +110,59 @@ winner  = settle > strike ? call : put`}</Pre>
             </P>
           </S>
 
-          <S id="odds" n={5} title="Where the odds come from">
+          <S id="odds" n={5} title="How the odds open">
             <P>
-              There is no market maker here and no seeded liquidity. A market is
-              a pot: both sides stake into it, and the winning side is paid out
-              of it. That is the whole mechanism, and it is the reason the
-              contract can never owe more than it is holding.
+              A market seeded at an even split claims both sides are equally
+              likely, which the record usually contradicts. Instead the opening
+              price is the model&apos;s probability that cumulative PnL is higher at
+              the close than at the open.
             </P>
-            <Pre>{`price(up)    = staked_up / pot
-multiple(up) = 1 + (stake / (staked_up + stake)) * staked_down * (1 - fee) / stake`}</Pre>
             <P>
-              So the odds are not a model&apos;s opinion — they are the book. A side
-              holding a quarter of the pot is the book saying 25%, and paying
-              close to 4x if it lands. Your own ticket is already inside the
-              denominator, which is why a large stake on a thin side quotes worse
-              than a small one: you are sharing the same losing pot with yourself.
+              Treating PnL as a walk with drift <Code>μ</Code> and per-step
+              volatility <Code>σ</Code> over <Code>n</Code> steps, that is{" "}
+              <Code>P = Φ(μ√n / σ)</Code>. Crypto returns are fat-tailed, so a
+              normal tail overstates how confident the estimate deserves to be;
+              a Student-t with four degrees of freedom pulls the answer back
+              toward even, which is the conservative direction for a book that
+              has to quote both sides. Prices are clamped to 15–85¢ so neither
+              side becomes untradeable.
             </P>
-            <Callout tone="accent" title="Why not an automated market maker">
-              An AMM quotes both sides continuously, which is nicer to trade
-              against — but every quote it gives is a promise the pool has to be
-              able to honour, and honouring it needs real collateral sitting
-              there before the first ticket. A venue that seeds that liquidity
-              out of thin air is writing cheques against money that does not
-              exist, and the first winning session is when everybody finds out.
-            </Callout>
-            <Callout tone="down" title="What you give up">
-              A pot has no counterparty to sell back to, so there is no closing a
-              position early. A ticket is held to the close, or it is voided.
-            </Callout>
           </S>
 
-          <S id="contract" n={6} title="The contract">
+          <S id="amm" n={6} title="How the price moves">
             <P>
-              Every market is a numbered entry in one contract on Robinhood
-              Chain, and every stake is USDG the contract is holding. The site
-              never touches the money: staking is a transaction you sign to the
-              contract, and collecting is a transaction you sign to the contract.
-              There is no state in which a payout is waiting on an operator.
+              Each market is a fixed-product pool holding a reserve of each
+              outcome. Collateral mints one of each outcome token — a call and a
+              put together are always worth exactly 1, since exactly one pays —
+              and a purchase withdraws the wanted side, sized so the product of
+              the reserves is unchanged.
             </P>
-            <Pre>{`openMarket(handle, window, opensAt, closesAt, strike)   // oracle
-stake(marketId, side, amount)                          // you
-resolve(marketId, settleValue)                         // oracle
-claim(marketId)                                        // you
-voidStale(marketId)                                    // anybody, after 7 days`}</Pre>
             <P>
-              The oracle publishes two numbers and nothing else. It cannot move a
-              stake, cannot pay itself, and cannot resolve a market that has not
-              closed — not by policy, but because the contract offers it no
-              function that would. If it disappears entirely, anyone at all can
-              void a market {RESOLVER_GRACE_MS / 864e5} days after its close and
-              every stake comes back at cost.
+              Price is the ratio between reserves, which is why price and implied
+              probability are the same number: a call at {cents(0.43)} is the
+              book saying 43%. Both sides always sum to 1.
             </P>
-            <Callout tone="up" title="The invariant">
-              A claim pays a winner their stake plus their share of the losing
-              pot. Summed across every winner that is at most the pot itself, so
-              the contract is solvent by arithmetic rather than by promise.
+            <Callout tone="accent" title="Depth is sized against the ticket">
+              Seeded depth is {usd(SEED_PER_MARKET, 0)} per market. That is not
+              arbitrary: at {usd(10, 0)} of depth a {usd(100, 0)} buy fills
+              roughly 42¢ away from the quoted price, which makes the multiple
+              on the card a number nobody actually receives. A fill more than 5¢
+              from the quote is refused outright.
             </Callout>
           </S>
 
           <S id="payout" n={7} title="What you get paid">
             <P>
-              A winner takes back their stake plus their share of the losing pot,
-              in proportion to what they staked. A loser gets nothing. The fee is{" "}
-              {FEE_BPS / 100}% and it is charged <B>on winnings only</B>, at the
-              claim — a position that loses pays no fee, because there is nothing
-              to take a fee from.
+              A winning share redeems for exactly 1 USDG; a losing share is
+              worth nothing. The fee is {FEE_BPS / 100}% and it is charged{" "}
+              <B>on winnings only</B>, at redemption. A position that loses pays
+              no fee, because there is nothing to take a fee from.
             </P>
             <Ticket />
             <P>
-              The multiple shown on every card and ticket is already net of that
-              fee: it is what the contract would actually pay, not a gross ratio
-              somebody still has to be talked out of.
+              This is also why a flat book quotes 1.98x rather than 2.00x: the
+              multiple on every card is what lands in the wallet after the fee,
+              not the gross ratio before it.
             </P>
             <FeeSplit />
           </S>
@@ -198,7 +179,7 @@ voidStale(marketId)                                    // anybody, after 7 days`
                 ["Evidence gap", `Fewer than ${SETTLEMENT_SNAPSHOTS} eligible readings at either end of the window.`],
                 ["Resolver stale", `Nobody resolved within ${RESOLVER_GRACE_MS / 864e5} days of the close, after which anyone may void it.`],
                 ["Subject opted out", "The account signed to delist itself; every open market on that handle voids."],
-                ["One-sided", "Nobody took the other side, so there is nothing to win. The contract voids it at the close rather than handing one side a free round trip."],
+                ["Guardian", "A separate key can stop a market that should not settle."],
               ] as [string, string][]).map(([k, v]) => (
                 <div key={k} style={{
                   display: "grid", gridTemplateColumns: "160px 1fr", gap: "var(--s-4)",
@@ -219,18 +200,19 @@ voidStale(marketId)                                    // anybody, after 7 days`
               implemented rather than promised.
             </P>
             <P>
-              You can leave. <Code>setBlocked</Code> on the contract refuses every
-              new market on your handle, the oracle voids the open ones, and each
-              stake is refunded at cost — no negotiation step, nothing to opt into
-              first.
+              You can leave. One signature delists you, voids every open market
+              on your handle, and refunds each position at cost — no negotiation
+              step, nothing to opt into first.
             </P>
             <P>
               There is also an escrow that accrues to your handle whether or not
-              you have heard of any of this: {FEE_SPLIT.traderEscrow}% of every
-              fee the contract takes, held under a hash of your handle from the
-              first ticket. It is not a promise on this page — it is a balance in
-              the contract, and <Code>claimEscrow</Code> pays it out to the
-              address bound to that handle.
+              you have heard of any of this. Its share is currently{" "}
+              {FEE_SPLIT.traderEscrow}%
+              {FEE_SPLIT.traderEscrow === 0
+                ? ", so nothing is accruing"
+                : " of every fee taken at redemption"}; this page reads
+              that constant rather than restating it, so it will say otherwise
+              the moment it changes.
             </P>
           </S>
 
@@ -241,14 +223,15 @@ voidStale(marketId)                                    // anybody, after 7 days`
                 ["Windows", WINDOWS.join(" · "), "per account"],
                 ["Markets live", `${ROSTER_SIZE * WINDOWS.length}`, ""],
                 ["Collateral", "USDG", ""],
-                ["Fee", `${FEE_BPS / 100}%`, "of winnings, never on entry"],
-                ["Fee split", `${FEE_SPLIT.traderEscrow} / ${FEE_SPLIT.venue}`, "subject escrow / venue"],
+                ["Redemption fee", `${FEE_BPS / 100}%`, "of winnings, never on entry"],
+                ["Fee split", `${FEE_SPLIT.burn} / ${FEE_SPLIT.holders} / ${FEE_SPLIT.traderEscrow} / ${FEE_SPLIT.liquidity}`, "burn / holders / escrow / liquidity"],
                 ["Underlying", "Cumulative account PnL", "signed, in dollars"],
                 ["Snapshot cadence", "5 min", "288 readings a day"],
                 ["Strike and settlement", `median of ${SETTLEMENT_SNAPSHOTS}`, "nearest the open and the close"],
                 ["Max snapshot age", `${MAX_SNAPSHOT_AGE_MS / 60000} min`, "older cannot value a moment"],
-                ["Book", "parimutuel pot", "no maker, no seeded liquidity"],
-                ["Seed per market", "none", "the only money in a pot is staked money"],
+                ["Opening price", "15–85¢", "from the account's own record"],
+                ["Seed per market", usd(SEED_PER_MARKET, 0), ""],
+                ["Max slippage", "5¢", "from the quoted price"],
                 ["Resolver grace", `${RESOLVER_GRACE_MS / 864e5} days`, "then anyone may void"],
               ] as [string, string, string][]).map(([k, v, note], i) => (
                 <div key={k} style={{
@@ -274,9 +257,8 @@ voidStale(marketId)                                    // anybody, after 7 days`
                 ["Keeper", "The service that takes those readings and serves them back."],
                 ["Strike", "The value at the open, committed as the market's record of where it started."],
                 ["Median rule", "Both ends are the median of the three nearest readings, so no single one decides anything."],
-                ["Up / Down", "The two sides: up wins if PnL is higher at the close, down if it is not."],
-                ["Parimutuel", "A pot both sides stake into, where the winners split the losers\u2019 money in proportion to what they staked."],
-                ["Pot", "Everything staked on a market, on both sides. The number the winning side is paid out of."],
+                ["Call / Put", "The two sides: the call pays if PnL is higher at the close, the put if it is not."],
+                ["Binary", "A contract worth exactly 1 unit of collateral if its condition holds, nothing if it does not."],
                 ["Void", "A refund at cost, used whenever the evidence cannot support a settlement."],
               ] as [string, string][]).map(([k, v]) => (
                 <div key={k} style={{ padding: "var(--s-4)", borderRadius: "var(--r-md)", background: "var(--surface-sunken)", border: "1px solid var(--border-subtle)" }}>
@@ -339,11 +321,10 @@ function Callout({ tone, title, children }: { tone: "up" | "down" | "accent"; ti
 
 /** Worked example, computed from the live constants rather than typed in. */
 function Ticket() {
-  const stake = 100, potMine = 160, potOther = 240;
-  const mult = multiple({ call: potMine, put: potOther }, "call", stake);
-  const gross = stake * mult;
-  const winnings = gross - stake;
-  const fee = (winnings / (1 - FEE_BPS / 10_000)) * (FEE_BPS / 10_000);
+  const stake = 100, price = 0.43;
+  const shares = stake / price;
+  const winnings = shares - stake;
+  const fee = (winnings * FEE_BPS) / 10_000;
 
   const row = (k: string, sub: string, v: string, tone?: string) => (
     <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--s-4)", padding: "11px 0", borderTop: "1px solid var(--border-subtle)" }}>
@@ -359,14 +340,15 @@ function Ticket() {
     <div style={{
       marginTop: "var(--s-5)", padding: "var(--s-5)", borderRadius: "var(--r-lg)",
       background: "var(--surface-raised)", border: "1px solid var(--border-subtle)",
+      boxShadow: "var(--shadow-2)",
     }}>
-      <div className="eyebrow">A {usd(stake, 0)} ticket on up</div>
+      <div className="eyebrow">A {usd(stake, 0)} ticket at {cents(price)}</div>
       <div style={{ marginTop: "var(--s-3)" }}>
-        {row("The pot when you arrive", `${usd(potMine, 0)} up · ${usd(potOther, 0)} down`, usd(potMine + potOther, 0))}
-        {row("Your share of the up side", "after your own ticket is counted", `${((stake / (potMine + stake)) * 100).toFixed(1)}%`)}
-        {row("Fee", `${FEE_BPS / 100}% of ${usd(winnings)} winnings`, `\u2212${usd(fee)}`)}
-        {row("If up wins", "claimed by you, from the contract", usd(gross), "var(--up)")}
-        {row("If down wins", "binary, so the stake is gone", usd(0), "var(--down)")}
+        {row("Shares", "each redeems for 1 USDG if it lands", shares.toFixed(2))}
+        {row("Gross", "if the call lands", usd(shares))}
+        {row("Fee", `${FEE_BPS / 100}% of ${usd(winnings)} winnings`, `−${usd(fee)}`)}
+        {row("Net", "what reaches the wallet", usd(shares - fee), "var(--up)")}
+        {row("If wrong", "binary, so the stake is gone", usd(0), "var(--down)")}
       </div>
     </div>
   );
@@ -374,8 +356,9 @@ function Ticket() {
 
 function FeeSplit() {
   const parts: [string, number, string][] = [
-    ["Subject escrow", FEE_SPLIT.traderEscrow, "var(--accent)"],
-    ["Venue", FEE_SPLIT.venue, "var(--fg-faint)"],
+    ["Burn", FEE_SPLIT.burn, "var(--accent)"],
+    ["Holders", FEE_SPLIT.holders, "var(--up)"],
+    ["Liquidity", FEE_SPLIT.liquidity, "var(--fg-faint)"],
   ];
   return (
     <div style={{ marginTop: "var(--s-5)" }}>
@@ -392,7 +375,7 @@ function FeeSplit() {
           </span>
         ))}
         <span style={{ fontSize: ".8125rem", color: "var(--fg-faint)" }}>
-          both split in the contract, at the claim
+          subject escrow {FEE_SPLIT.traderEscrow}%
         </span>
       </div>
     </div>

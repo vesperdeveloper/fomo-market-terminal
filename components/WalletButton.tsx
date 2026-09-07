@@ -4,35 +4,32 @@ import type { Address } from "viem";
 import { connect, currentAccount, usdgBalance, hasWallet, short, injected } from "@/lib/wallet";
 
 /* ------------------------------------------------------------------ */
-/* Venue                                                               */
+/* Treasury                                                            */
 /* ------------------------------------------------------------------ */
 
-export type Venue =
-  | {
-      live: true; testnet: boolean; chainId: number; chainName: string;
-      contract: string; explorer: string; collateral: string;
-      oracle: string | null; oracleGas: number; publishing: boolean;
-      markets: { total: number; open: number };
-      staked: number; held: number; feeAccrued: number;
-    }
-  | { live: false; chainId?: number; reason?: string };
+export type Treasury =
+  | { live: true; address: string; collateral: number; liability: number; headroom: number; covered: number }
+  | { live: false; reason?: string };
 
 /**
- * Which contract this deployment trades against, and whether its oracle is
- * still able to publish. Everything downstream branches on this one answer
- * rather than guessing from whether a wallet happens to be installed.
+ * Whether this deployment takes real money, and where it takes it.
+ *
+ * A deployment without a treasury still trades - it simply books positions
+ * without a payment, which is what local and preview builds do. Everything
+ * downstream branches on this one answer rather than guessing from whether
+ * a wallet happens to be installed.
  */
-export function useVenue() {
-  const [venue, setVenue] = useState<Venue | null>(null);
+export function useTreasury() {
+  const [treasury, setTreasury] = useState<Treasury | null>(null);
   useEffect(() => {
     let alive = true;
-    fetch("/api/venue")
+    fetch("/api/treasury")
       .then((r) => r.json())
-      .then((v) => { if (alive) setVenue(v as Venue); })
-      .catch(() => { if (alive) setVenue({ live: false, reason: "venue unreachable" }); });
+      .then((t) => { if (alive) setTreasury(t as Treasury); })
+      .catch(() => { if (alive) setTreasury({ live: false, reason: "treasury unreachable" }); });
     return () => { alive = false; };
   }, []);
-  return venue;
+  return treasury;
 }
 
 /* ------------------------------------------------------------------ */

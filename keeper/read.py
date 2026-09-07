@@ -155,12 +155,9 @@ def main():
         json={"source": "fomo.family/v2/leaderboard", "t": at, "rows": rows},
         timeout=60,
     )
-    print(f"{at}  {len(rows)} rows -> {ingest.status_code} {ingest.text[:200]}")
-
-    # opening and settling is a separate step on purpose: a reading that
-    # landed is worth keeping even if the chain call fails
-    oracle = requests.get(f"{SITE}/api/oracle", headers=auth, timeout=120)
-    print(f"oracle -> {oracle.status_code} {oracle.text[:600]}")
+    # the ingest endpoint opens what is missing and settles what is due, so
+    # one call is the whole tick
+    print(f"{at}  {len(rows)} rows -> {ingest.status_code} {ingest.text[:300]}")
 
     if ingest.status_code >= 400:
         sys.exit(1)

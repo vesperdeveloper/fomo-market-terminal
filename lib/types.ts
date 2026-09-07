@@ -1,14 +1,13 @@
 export type Side = "call" | "put";
 export type Window = "24h" | "7d";
 
-export type MarketStatus = "open" | "settled" | "void";
+export type MarketStatus = "open" | "closing" | "settled" | "void";
 
 export type VoidReason =
   | "evidence_gap"      // keeper stopped reading; no usable snapshots in the window
   | "resolver_stale"    // nobody resolved within the grace period
   | "trader_opt_out"    // the subject signed to delist themselves
-  | "one_sided"         // nobody took the other side, so there is nothing to win
-  | "guardian";         // the oracle stopped a market that should not settle
+  | "guardian";         // cold key stopped a market that should not settle
 
 export interface Trader {
   handle: string;
@@ -32,14 +31,6 @@ export interface Snapshot {
   pnl: Record<string, number>;
 }
 
-/**
- * A market, as the contract holds it.
- *
- * There are no reserves here and no seed, because there is no maker: the two
- * pools are simply what each side has staked, and everything the interface
- * quotes is derived from their ratio. `id` is the on-chain market id, which
- * is what every URL, ticket and claim is keyed on.
- */
 export interface Market {
   id: number;
   handle: string;
@@ -52,22 +43,26 @@ export interface Market {
   settleValue: number | null;
   winner: Side | null;
   voidReason: VoidReason | null;
-  /** staked on each side, in USDG */
-  pools: { call: number; put: number };
-  /** the pot, which is also the traded volume */
+  /** outcome-token reserves; price is the ratio between them */
+  reserves: { call: number; put: number };
   volume: number;
+  seed: number;
 }
 
-/** A stake, read back from the chain rather than kept in a database. */
 export interface Position {
-  marketId: number;
+  id: string;
+  /** the wallet that paid for the shares, and the wallet a payout returns to */
   owner: string;
+  marketId: number;
   side: Side;
-  /** what it cost, which is also what it is worth if the market voids */
-  stake: number;
-  /** what the holder would be paid if the book closed as it stands */
-  markedAt: number;
-  claimed: boolean;
-  /** paid out, once the market is settled and the holder has claimed */
+  shares: number;
+  /** what the shares cost, so the fee can be taken on winnings only */
+  cost: number;
+  createdAt: string;
+  claimedAt?: string;
   payout?: number;
+  /** the USDG transfer that paid for this position, verified on chain */
+  depositTx?: string;
+  /** the USDG transfer that settled it, once the holder has claimed */
+  payoutTx?: string;
 }

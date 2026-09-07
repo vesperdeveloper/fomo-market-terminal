@@ -4,12 +4,10 @@ import { priceOf, multipleOf } from "@/lib/view";
 import TraderCard, { Avatar } from "@/components/TraderCard";
 import Marquee from "@/components/Marquee";
 import Reveal from "@/components/Reveal";
-import VenueBanner from "@/components/VenueBanner";
 
-import { usd, usdShort, pct, followers as fmtF } from "@/lib/format";
-import { multiple } from "@/lib/pool";
+import { usd, usdShort, pct, cents, followers as fmtF } from "@/lib/format";
+import { SEED_PER_MARKET } from "@/lib/markets";
 import { FEE_BPS, FEE_SPLIT } from "@/lib/settlement";
-import { QUOTE_STAKE } from "@/lib/view";
 
 export const dynamic = "force-dynamic";
 
@@ -369,8 +367,8 @@ export default async function Home() {
           <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "var(--s-6)" }}>
             {[
               ["Pick an account", "Every listed handle carries a one-day and a seven-day market. Search one or browse the board."],
-              ["Take a side", "Stake USDG on up or down. It goes straight into the market's contract, and the pot it joins is the pot the winning side is paid out of."],
-              ["Collect it yourself", "At the close the oracle publishes the median of the readings around it, the contract picks the winner, and you claim straight from it — nobody has to send you anything."],
+              ["Take a side", "Buy the call or the put at the quoted price. A share costs what the book says and pays exactly 1 USDG if it lands."],
+              ["Collect on the record", "At the close the resolver publishes the median of the readings around it, the market resolves, and winnings are claimable."],
             ].map(([h, b], i) => (
               <Reveal as="li" key={h} delay={i * 70} style={{ display: "flex", gap: "var(--s-4)" }}>
                 <span className="num" style={{ color: "var(--fg-faint)", fontWeight: 700, fontSize: ".8125rem", paddingTop: 4 }}>
@@ -389,7 +387,6 @@ export default async function Home() {
 
       {/* ------------------------------------------------------- live board */}
       <Section eyebrow="Live board" title="Open right now">
-        <VenueBanner />
         <Reveal>
           <div style={{
             marginTop: "var(--s-8)", border: "1px solid var(--border-subtle)",
@@ -613,17 +610,17 @@ winner  = settle > strike ? call : put
         <div style={{ display: "grid", gap: "var(--s-4)", marginTop: "var(--s-8)", maxWidth: "72ch" }}>
           {([
             ["Do I need to hold anything to trade?",
-             "USDG for the stake and a little ETH for gas, both on Robinhood Chain. There is no protocol token, and taking a position never requires one."],
+             "No. Markets are priced, traded and settled in USDG. Nothing about taking a position requires holding a protocol token."],
             ["What stops a trader from moving their own market?",
              "The underlying is cumulative PnL, so depositing does nothing to it — only closed trades move the number. And both ends of the window are a median of three readings, so a single well-timed print is the value that gets discarded."],
             ["What happens if the reading stops?",
-             "The market voids and every stake is refunded at what it cost. A gap is recorded as a gap, and if the oracle never comes back at all, anyone can void the market from the contract seven days after its close."],
-            ["Can I close a position early?",
-             "No. A market is a pot rather than a maker, so there is nobody to sell back to — a ticket is held to the close, or it voids and comes back at cost. That is the trade for a book that can never owe more than it holds."],
-            ["Why is the multiple not exactly 2x on an even pot?",
-             `Because the number shown is what the contract actually pays. A ${FEE_BPS / 100}% fee is taken from winnings at the claim, and your own ticket is already counted in the pot, so an even book quotes just under 2x rather than exactly 2x.`],
+             "The market voids and every position is refunded at what it cost. A gap is recorded as a gap; the last good file is never stretched across a stretch nobody observed."],
+            ["Can I sell before the close?",
+             "Yes. Both sides stay quotable for the life of the market, so a position can be closed back into the pool at the current price instead of being held to settlement."],
+            ["Why is the multiple not exactly 2x on an even book?",
+             `Because the number shown is what reaches the wallet. A ${FEE_BPS / 100}% fee is taken from winnings at redemption, which turns an even book into 1.98x rather than 2.00x.`],
             ["I am one of the listed accounts. How do I get off?",
-             "One signature to the contract. It refuses every new market on your handle, the open ones are voided, and each stake is refunded at cost — with nothing to sign up for first."],
+             "One signature. It voids every open market on your handle and refunds each position at cost, with nothing to sign up for first."],
           ] as [string, string][]).map(([q, a], i) => (
             <Reveal key={q} delay={i * 40}>
               <details style={{
@@ -708,12 +705,10 @@ function Pill({ kind, v, href }: { kind: "call" | "put"; v: number; href: string
 /** Worked example, computed from the live parameters rather than typed in. */
 function Ticket() {
   const stake = 100;
-  const potOther = 240;      // what the other side is holding when you arrive
-  const potMine = 160;       // what your side already holds
-  const mult = multiple({ call: potMine, put: potOther }, "call", stake);
-  const gross = stake * mult;
-  const winnings = gross - stake;
-  const fee = (winnings / (1 - FEE_BPS / 10_000)) * (FEE_BPS / 10_000);
+  const price = 0.43;
+  const shares = stake / price;
+  const winnings = shares - stake;
+  const fee = (winnings * FEE_BPS) / 10_000;
 
   const line = (k: string, sub: string, v: string, strong?: boolean) => (
     <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--s-4)", padding: "12px 0", borderTop: "1px solid var(--border-subtle)" }}>
@@ -728,21 +723,19 @@ function Ticket() {
   return (
     <div style={{
       background: "var(--surface-raised)", border: "1px solid var(--border-subtle)",
-      borderRadius: "var(--r-lg)", padding: "var(--s-6)",
+      borderRadius: "var(--r-xl)", padding: "var(--s-6)", boxShadow: "var(--shadow-3)",
     }}>
       <div className="eyebrow">A {usd(stake, 0)} ticket</div>
       <div style={{ marginTop: "var(--s-4)" }}>
-        {line("The pot when you arrive", `${usd(potMine, 0)} on up, ${usd(potOther, 0)} on down`, usd(potMine + potOther, 0))}
-        {line("You stake", "on up, into the same pot", usd(stake))}
-        {line("Your multiple", "your share of the other side, after the fee", `${mult.toFixed(2)}x`)}
-        {line("Fee", `${FEE_BPS / 100}% of winnings, taken at the claim`, usd(fee))}
-        {line("If you are right", "claimed by you, from the contract", usd(gross), true)}
+        {line("You buy", `the call at ${cents(price)}`, usd(stake))}
+        {line("Shares", "each redeems for 1 USDG if it lands", shares.toFixed(2))}
+        {line("Fee", `${FEE_BPS / 100}% of winnings, charged at redemption`, usd(fee))}
+        {line("If you are right", "net of the fee", usd(shares - fee), true)}
         {line("If you are wrong", "binary, so the stake is gone", usd(0))}
       </div>
       <p style={{ margin: "var(--s-4) 0 0", fontSize: ".8125rem", color: "var(--fg-faint)", lineHeight: 1.6 }}>
-        Nothing is seeded and nothing is underwritten: the only money in a
-        market is the money staked into it, which is why the contract can
-        never owe more than it holds.
+        Each market opens with {usd(SEED_PER_MARKET, 0)} of seeded depth at an even
+        price, so early size moves the quote noticeably.
       </p>
     </div>
   );

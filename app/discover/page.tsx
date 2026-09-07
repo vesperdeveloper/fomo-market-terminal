@@ -1,6 +1,5 @@
 import { board, multipleOf, priceOf } from "@/lib/view";
 import DiscoverBoard from "@/components/DiscoverBoard";
-import VenueBanner from "@/components/VenueBanner";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +30,6 @@ export default async function Discover() {
           Last read {new Date(readAt).toISOString().replace("T", " ").slice(0, 16)}Z · {source}
         </p>
       )}
-
-      <VenueBanner />
 
       <DiscoverBoard
         rows={rows.map((r) => ({
