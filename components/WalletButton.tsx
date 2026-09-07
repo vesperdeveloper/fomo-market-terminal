@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Address } from "viem";
 import { connect, currentAccount, usdgBalance, hasWallet, short, injected } from "@/lib/wallet";
 
@@ -46,50 +46,120 @@ export interface WalletState {
   refreshBalance: () => Promise<void>;
 }
 
-/** The connected account, its USDG balance, and a way to get both. */
+/* ------------------------------------------------------------------ */
+/* One wallet, shared, and asked for only when it is needed            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Nothing here touches the wallet until somebody asks it to.
+ *
+ * This used to run on mount, in the nav, on every page: arriving at the site
+ * to read the board meant an extension lighting up before you had done
+ * anything. Reading a board needs no wallet, and a venue that demands one at
+ * the door is asking for a signature in exchange for nothing.
+ *
+ * So the state lives in one module-level store rather than in each component.
+ * The ticket asks for a wallet at the moment of the stake; the store then
+ * tells the nav, which is why the balance appears up there without the nav
+ * ever having asked.
+ */
+interface Snapshot {
+  address: Address | null;
+  balance: number | null;
+  installed: boolean;
+  connecting: boolean;
+  error: string | null;
+}
+
+const REMEMBER_KEY = "fomomarket.wallet.seen";
+
+let snapshot: Snapshot = {
+  address: null, balance: null, installed: false, connecting: false, error: null,
+};
+const listeners = new Set<() => void>();
+
+function set(patch: Partial<Snapshot>) {
+  snapshot = { ...snapshot, ...patch };
+  for (const l of listeners) l();
+}
+const subscribe = (cb: () => void) => {
+  listeners.add(cb);
+  return () => { listeners.delete(cb); };
+};
+const getSnapshot = () => snapshot;
+
+/** Track account switches — attached only once a wallet is actually in play. */
+let watching = false;
+function watchAccounts() {
+  if (watching) return;
+  const eth = injected();
+  if (!eth?.on) return;
+  watching = true;
+  eth.on("accountsChanged", (...args: unknown[]) => {
+    const accounts = args[0] as string[] | undefined;
+    set({ address: accounts?.length ? (accounts[0] as Address) : null, balance: null });
+    if (accounts?.length) void loadBalance(accounts[0] as Address);
+  });
+}
+
+async function loadBalance(address: Address) {
+  try { set({ balance: await usdgBalance(address) }); }
+  catch { set({ balance: null }); }
+}
+
+/**
+ * Pick a previous session back up without prompting.
+ *
+ * `eth_accounts` never opens a wallet — it only reports what has already been
+ * authorised — but it is still gated on having connected here before, so a
+ * first-time visitor's extension is not touched at all.
+ */
+let resumed = false;
+async function resumeQuietly() {
+  if (resumed || typeof window === "undefined") return;
+  resumed = true;
+  let seen = false;
+  try { seen = localStorage.getItem(REMEMBER_KEY) === "1"; } catch {}
+  if (!seen) return;
+  const a = await currentAccount().catch(() => null);
+  if (!a) return;
+  set({ address: a, installed: true });
+  watchAccounts();
+  void loadBalance(a);
+}
+
+/** The one call that can open a wallet. Nothing else in the app may. */
+async function connectWallet(): Promise<Address | null> {
+  set({ connecting: true, error: null });
+  try {
+    const a = await connect();
+    try { localStorage.setItem(REMEMBER_KEY, "1"); } catch {}
+    set({ address: a, installed: true, connecting: false });
+    watchAccounts();
+    void loadBalance(a);
+    return a;
+  } catch (e) {
+    set({
+      connecting: false,
+      installed: hasWallet(),
+      error: e instanceof Error ? e.message : "could not connect",
+    });
+    return null;
+  }
+}
+
+/** The connected account and its USDG balance, if there is one yet. */
 export function useWallet(): WalletState {
-  const [address, setAddress] = useState<Address | null>(null);
-  const [balance, setBalance] = useState<number | null>(null);
-  const [installed, setInstalled] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  // pick up an already-authorised account without prompting
-  useEffect(() => {
-    let alive = true;
-    setInstalled(hasWallet());
-    currentAccount().then((a) => { if (alive) setAddress(a); }).catch(() => {});
-
-    const eth = injected();
-    const onAccounts = (...args: unknown[]) => {
-      const accounts = args[0] as string[] | undefined;
-      setAddress(accounts?.length ? (accounts[0] as Address) : null);
-      setBalance(null);
-    };
-    eth?.on?.("accountsChanged", onAccounts);
-    return () => { alive = false; eth?.removeListener?.("accountsChanged", onAccounts); };
-  }, []);
+  useEffect(() => { void resumeQuietly(); }, []);
 
   const refreshBalance = useCallback(async () => {
-    if (!address) { setBalance(null); return; }
-    try { setBalance(await usdgBalance(address)); } catch { setBalance(null); }
-  }, [address]);
-
-  useEffect(() => { refreshBalance(); }, [refreshBalance]);
-
-  const connectWallet = useCallback(async () => {
-    setConnecting(true); setError(null);
-    try {
-      const a = await connect();
-      setAddress(a);
-      return a;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "could not connect");
-      return null;
-    } finally { setConnecting(false); }
+    if (!snapshot.address) { set({ balance: null }); return; }
+    await loadBalance(snapshot.address);
   }, []);
 
-  return { address, balance, installed, connecting, error, connectWallet, refreshBalance };
+  return { ...state, connectWallet, refreshBalance };
 }
 
 /* ------------------------------------------------------------------ */

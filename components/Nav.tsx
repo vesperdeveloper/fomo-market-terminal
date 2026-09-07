@@ -111,7 +111,10 @@ export default function Nav() {
             <span style={{ color: "var(--accent-hover)" }}>soon</span>
           </span>
 
-          {wallet.address ? (
+          {/* The balance only appears once there is a wallet in play. There
+              is no Connect button up here on purpose: reading the board needs
+              no wallet, and the ticket asks for one at the moment of the stake. */}
+          {wallet.address && (
             <span
               className="num"
               title={wallet.address}
@@ -125,19 +128,6 @@ export default function Nav() {
               <i style={{ width: 5, height: 5, background: "var(--up)" }} />
               {wallet.balance == null ? short(wallet.address) : `${wallet.balance.toFixed(2)} USDG`}
             </span>
-          ) : (
-            <button
-              onClick={() => { void wallet.connectWallet(); }}
-              disabled={wallet.connecting}
-              className="nav-connect num"
-              style={{
-                padding: "7px 12px", borderRadius: "var(--r-sm)", cursor: "pointer",
-                background: "transparent", border: "1px solid var(--border-strong)",
-                color: "var(--fg)", fontSize: ".75rem", letterSpacing: ".1em", textTransform: "uppercase",
-              }}
-            >
-              {wallet.connecting ? "…" : "Connect"}
-            </button>
           )}
 
           <Link
@@ -160,7 +150,6 @@ export default function Nav() {
         @media (max-width: 1100px){ .nav-links{display:none !important} .nav-rule{display:none !important} }
         @media (max-width: 900px){ .nav-clock{display:none !important} }
         @media (max-width: 700px){ .nav-ca{display:none !important} }
-        @media (max-width: 520px){ .nav-connect{display:none !important} }
       `}</style>
     </header>
   );

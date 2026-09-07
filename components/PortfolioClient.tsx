@@ -91,13 +91,27 @@ export default function PortfolioClient() {
 
   if (treasury === null) return <Empty text="Loading…" />;
 
+  // A position is keyed to the wallet that paid for it, so reading them back
+  // does need one — but it is offered, not demanded, and nothing is asked for
+  // until this button is pressed.
   if (live && !wallet.address) {
     return (
       <div style={{ marginTop: "var(--s-8)", display: "grid", gap: "var(--s-3)", justifyItems: "start" }}>
-        <p style={{ color: "var(--fg-faint)", margin: 0 }}>
-          Positions are held by the wallet that paid for them. Connect that wallet to see them.
+        <p style={{ color: "var(--fg-muted)", margin: 0, maxWidth: "52ch", lineHeight: 1.6 }}>
+          Positions are held by the wallet that paid for them. Connect one to read
+          yours back — nothing else on the site needs it.
         </p>
-        <WalletButton wallet={wallet} />
+        <button
+          onClick={() => { void wallet.connectWallet(); }}
+          disabled={wallet.connecting}
+          style={{
+            padding: "10px 18px", borderRadius: "var(--r-md)", cursor: "pointer",
+            background: "var(--accent)", border: "none", color: "var(--accent-contrast)",
+            fontWeight: 500, fontSize: ".9375rem", fontFamily: "inherit",
+          }}
+        >
+          {wallet.connecting ? "Connecting…" : "Connect wallet"}
+        </button>
         {wallet.error && (
           <p style={{ color: "var(--down)", fontSize: ".8125rem", margin: 0 }}>{wallet.error}</p>
         )}
