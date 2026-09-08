@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Address } from "viem";
-import { connect, currentAccount, usdgBalance, hasWallet, short, injected } from "@/lib/wallet";
+import { connect, currentAccount, usdgBalance, gasBalance, hasWallet, short, injected } from "@/lib/wallet";
 
 /* ------------------------------------------------------------------ */
 /* Treasury                                                            */
@@ -39,6 +39,8 @@ export function useTreasury() {
 export interface WalletState {
   address: Address | null;
   balance: number | null;
+  /** native ETH on the chain, which is what pays for gas */
+  gas: number | null;
   installed: boolean;
   connecting: boolean;
   error: string | null;
@@ -66,6 +68,7 @@ export interface WalletState {
 interface Snapshot {
   address: Address | null;
   balance: number | null;
+  gas: number | null;
   installed: boolean;
   connecting: boolean;
   error: string | null;
@@ -74,7 +77,7 @@ interface Snapshot {
 const REMEMBER_KEY = "fomomarket.wallet.seen";
 
 let snapshot: Snapshot = {
-  address: null, balance: null, installed: false, connecting: false, error: null,
+  address: null, balance: null, gas: null, installed: false, connecting: false, error: null,
 };
 const listeners = new Set<() => void>();
 
@@ -97,14 +100,17 @@ function watchAccounts() {
   watching = true;
   eth.on("accountsChanged", (...args: unknown[]) => {
     const accounts = args[0] as string[] | undefined;
-    set({ address: accounts?.length ? (accounts[0] as Address) : null, balance: null });
+    set({ address: accounts?.length ? (accounts[0] as Address) : null, balance: null, gas: null });
     if (accounts?.length) void loadBalance(accounts[0] as Address);
   });
 }
 
 async function loadBalance(address: Address) {
-  try { set({ balance: await usdgBalance(address) }); }
-  catch { set({ balance: null }); }
+  const [usdg, eth] = await Promise.allSettled([usdgBalance(address), gasBalance(address)]);
+  set({
+    balance: usdg.status === "fulfilled" ? usdg.value : null,
+    gas: eth.status === "fulfilled" ? eth.value : null,
+  });
 }
 
 /**
@@ -155,7 +161,7 @@ export function useWallet(): WalletState {
   useEffect(() => { void resumeQuietly(); }, []);
 
   const refreshBalance = useCallback(async () => {
-    if (!snapshot.address) { set({ balance: null }); return; }
+    if (!snapshot.address) { set({ balance: null, gas: null }); return; }
     await loadBalance(snapshot.address);
   }, []);
 

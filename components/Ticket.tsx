@@ -125,6 +125,12 @@ export default function Ticket({
   const payoutMult = quote && stake > 0 ? net / stake : 0;
 
   const needsWallet = live && !wallet.address;
+  /**
+   * A wallet with USDG and no ETH cannot send anything. MetaMask opens, fails
+   * to quote a network fee and shows a dead confirm button — so the ticket
+   * says it first, while the buyer can still do something about it.
+   */
+  const noGas = live && wallet.address != null && wallet.gas != null && wallet.gas <= 0;
   const shortOfFunds =
     live && wallet.address != null && wallet.balance != null && stake > wallet.balance + 1e-9;
 
@@ -483,10 +489,10 @@ export default function Ticket({
 
           {/* Buy button */}
           {(() => {
-            const dead = closed || tooBig || shortOfFunds || fundingPaused;
+            const dead = closed || tooBig || shortOfFunds || fundingPaused || noGas;
             const disabled =
               busy || closed || !quote || tooBig || stake <= 0 || shortOfFunds ||
-              fundingPaused || treasury === null || wallet.connecting;
+              fundingPaused || noGas || treasury === null || wallet.connecting;
             return (
               <button onClick={submit} disabled={disabled} style={{
                 width: "100%", marginTop: "var(--s-5)", padding: "15px",
@@ -506,12 +512,23 @@ export default function Ticket({
                   : wallet.connecting ? "Connecting…"
                   : stake <= 0 ? "Enter an amount"
                   : tooBig ? "Size too large for this book"
+                  : noGas ? "No ETH for gas on Robinhood Chain"
                   : shortOfFunds ? "Not enough USDG"
                   : needsWallet ? "Connect wallet"
                   : `Buy ${side === "call" ? "Call" : "Put"} · ${usd(stake)}`}
               </button>
             );
           })()}
+
+          {noGas && (
+            <p style={{ marginTop: "var(--s-3)", fontSize: ".8125rem", color: "var(--fg-muted)", lineHeight: 1.55 }}>
+              This wallet holds USDG but no ETH on Robinhood Chain, and a transfer
+              still has to pay for its own gas — about 0.00002 ETH, so a thousandth
+              of one covers dozens of tickets. Send a little to{" "}
+              <span className="num" style={{ color: "var(--fg)" }}>{short(wallet.address ?? "")}</span>{" "}
+              and this button comes back.
+            </p>
+          )}
 
           {fundingPaused && (
             <p style={{ marginTop: "var(--s-3)", fontSize: ".8125rem", color: "var(--fg-muted)", lineHeight: 1.55 }}>

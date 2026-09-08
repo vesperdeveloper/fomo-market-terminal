@@ -75,6 +75,18 @@ export async function usdgBalance(owner: Address): Promise<number> {
 }
 
 /**
+ * Native ETH held on Robinhood Chain, which is what pays for gas.
+ *
+ * A wallet full of USDG and empty of ETH cannot send anything: the wallet
+ * opens, quotes no network fee, and the confirm button does nothing. Better
+ * to say so before the dialog than to let somebody stare at a dead one.
+ */
+export async function gasBalance(owner: Address): Promise<number> {
+  const wei = await reader().getBalance({ address: owner });
+  return Number(wei) / 1e18;
+}
+
+/**
  * Send `usd` USDG to the treasury and wait for it to be mined.
  *
  * The server re-reads this receipt before it hands out any shares, so the
