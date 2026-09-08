@@ -55,6 +55,43 @@ export async function connect(): Promise<Address> {
   return getAddress(accounts[0]);
 }
 
+/**
+ * Hand the account picker back to the wallet.
+ *
+ * There is no way to tell a wallet "use a different account" — the choice is
+ * the wallet's to make, and the only honest way to ask is to re-request the
+ * permission, which is what opens the picker. Wallets that do not implement
+ * permissions fall back to a plain connect, which at least surfaces whatever
+ * account they consider current.
+ */
+export async function switchAccount(): Promise<Address> {
+  const eth = injected();
+  if (!eth) throw new Error("no wallet found in this browser");
+  try {
+    await eth.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+  } catch (e) {
+    // 4001 is the user closing the picker; anything else means the wallet
+    // has no such method and connect() is the best that can be done
+    if ((e as { code?: number })?.code === 4001) throw e;
+  }
+  return connect();
+}
+
+/**
+ * Forget the wallet on this site.
+ *
+ * Revoking is best-effort: not every wallet implements it, and none can be
+ * made to. What is guaranteed is the half this site controls — the address
+ * is dropped and the flag that lets a later visit resume quietly is cleared,
+ * so nothing here touches that account again until it is offered.
+ */
+export async function forgetWallet(): Promise<void> {
+  const eth = injected();
+  try {
+    await eth?.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+  } catch { /* the wallet does not support it, which is its right */ }
+}
+
 export async function currentAccount(): Promise<Address | null> {
   const eth = injected();
   if (!eth) return null;

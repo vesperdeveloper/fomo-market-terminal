@@ -1,7 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Address } from "viem";
-import { connect, currentAccount, usdgBalance, gasBalance, hasWallet, short, injected } from "@/lib/wallet";
+import {
+  connect, currentAccount, usdgBalance, gasBalance, hasWallet, short, injected,
+  switchAccount, forgetWallet,
+} from "@/lib/wallet";
 
 /* ------------------------------------------------------------------ */
 /* Treasury                                                            */
@@ -45,6 +48,10 @@ export interface WalletState {
   connecting: boolean;
   error: string | null;
   connectWallet: () => Promise<Address | null>;
+  /** Ask the wallet to offer its account picker. */
+  switchWallet: () => Promise<Address | null>;
+  /** Drop the account on this site, and stop resuming it on later visits. */
+  disconnect: () => Promise<void>;
   refreshBalance: () => Promise<void>;
 }
 
@@ -154,6 +161,31 @@ async function connectWallet(): Promise<Address | null> {
   }
 }
 
+async function switchWallet(): Promise<Address | null> {
+  set({ connecting: true, error: null });
+  try {
+    const a = await switchAccount();
+    try { localStorage.setItem(REMEMBER_KEY, "1"); } catch {}
+    set({ address: a, balance: null, gas: null, installed: true, connecting: false });
+    watchAccounts();
+    void loadBalance(a);
+    return a;
+  } catch (e) {
+    const code = (e as { code?: number })?.code;
+    set({
+      connecting: false,
+      error: code === 4001 ? null : e instanceof Error ? e.message : "could not switch",
+    });
+    return null;
+  }
+}
+
+async function disconnect(): Promise<void> {
+  await forgetWallet();
+  try { localStorage.removeItem(REMEMBER_KEY); } catch {}
+  set({ address: null, balance: null, gas: null, error: null });
+}
+
 /** The connected account and its USDG balance, if there is one yet. */
 export function useWallet(): WalletState {
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -165,7 +197,7 @@ export function useWallet(): WalletState {
     await loadBalance(snapshot.address);
   }, []);
 
-  return { ...state, connectWallet, refreshBalance };
+  return { ...state, connectWallet, switchWallet, disconnect, refreshBalance };
 }
 
 /* ------------------------------------------------------------------ */

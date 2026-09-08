@@ -93,6 +93,9 @@ export async function treasuryGas(): Promise<number> {
   return Number(wei) / 1e18;
 }
 
+export const explorerAddress = (a: string) =>
+  `${robinhood.blockExplorers.default.url}/address/${a}`;
+
 export const explorerTx = (h: string) =>
   `${robinhood.blockExplorers.default.url}/tx/${h}`;
 
