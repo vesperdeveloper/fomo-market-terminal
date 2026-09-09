@@ -70,7 +70,9 @@ export async function ready(opts: { manage?: boolean; sinceMs?: number } = {}) {
       await store.putTraders(ROSTER);
     }
   }
-  const snaps = await store.listSnapshots(sinceMs);
+  // the same rule as the ingest tick: the wide read is for settling, and
+  // settling only happens when something has closed
+  const snaps = await store.listSnapshots(sinceMs ?? Date.now() - 2 * 60 * 60 * 1000);
   if (!manage) return { store, snaps };
 
   const traders = await store.getTraders();
@@ -87,6 +89,10 @@ export async function ready(opts: { manage?: boolean; sinceMs?: number } = {}) {
   }
 
   await ensureMarkets(store, traders.slice(0, ROSTER_SIZE), snaps, new Date(), seriesOf);
-  await settleDue(store, snaps, optedOut);
+
+  const markets = await store.getMarkets();
+  const due = markets.some((m) => m.status === "open" && new Date(m.closesAt).getTime() <= Date.now());
+  if (due) await settleDue(store, await store.listSnapshots(), optedOut);
+
   return { store, snaps };
 }

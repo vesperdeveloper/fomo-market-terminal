@@ -70,7 +70,25 @@ export async function POST(req: Request) {
   await store.appendSnapshot(snapshot);
   await store.putTraders(traders);
 
-  const snaps = await store.listSnapshots();
+  /**
+   * Read only as far back as this tick actually needs.
+   *
+   * Opening a market needs the readings around *now* to strike it, which is
+   * an hour of record at most. Settling needs the readings around a window's
+   * ends — but on all but a handful of ticks nothing is due, and reading nine
+   * days of snapshots every five minutes to discover that is what emptied the
+   * database's transfer quota. So the wide read happens only when the markets
+   * table, which is small, says something has actually closed.
+   */
+  const markets = await store.getMarkets();
+  const now = Date.now();
+  const anythingDue = markets.some(
+    (m) => m.status === "open" && new Date(m.closesAt).getTime() <= now,
+  );
+
+  const snaps = await store.listSnapshots(
+    anythingDue ? undefined : now - 2 * 60 * 60 * 1000,
+  );
   await ensureMarkets(store, traders.slice(0, ROSTER_SIZE), snaps);
   const settled = await settleDue(
     store, snaps,

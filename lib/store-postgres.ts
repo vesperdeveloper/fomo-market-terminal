@@ -135,6 +135,11 @@ export const postgresStore: Store = {
        ON CONFLICT (t, source) DO NOTHING`,
       [s.t, s.source, JSON.stringify(s.pnl)],
     );
+    // Nothing ever settles on a reading older than the longest window plus
+    // the age tolerance, and the memory store has always dropped them. This
+    // one never did, so the table grew without bound — and since every read
+    // is a window over it, an unbounded table is unbounded egress.
+    await db().query(`DELETE FROM snapshots WHERE t < now() - interval '10 days'`);
   },
 
   async listSnapshots(sinceMs) {

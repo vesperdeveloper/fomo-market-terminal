@@ -110,6 +110,19 @@ const changeOver = (snaps: Snapshot[], handle: string, ms: number, now: number) 
 const BOARD_WINDOW_MS = 26 * 60 * 60 * 1000;
 
 export async function board(): Promise<{ rows: Row[]; readAt: string | null; source: string | null }> {
+  // A database that is down, over quota or simply slow must not take the site
+  // with it. Every page here is a read of a record; if the record cannot be
+  // read the honest answer is an empty board, not a 500 — and not, as it was,
+  // a build that refuses to finish.
+  try {
+    return await readBoard();
+  } catch (e) {
+    console.error("board unavailable:", (e as Error).message);
+    return { rows: [], readAt: null, source: null };
+  }
+}
+
+async function readBoard(): Promise<{ rows: Row[]; readAt: string | null; source: string | null }> {
   // A render reads; it does not open or settle markets, and it does not need
   // the nine days of readings a settlement reaches back through.
   const { store, snaps } = await ready({ manage: false, sinceMs: Date.now() - BOARD_WINDOW_MS });
