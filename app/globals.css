@@ -297,3 +297,11 @@ input::placeholder { color: var(--fg-faint); }
    collapsed. Saying so explicitly is the whole fix. */
 .split, .market-shell { min-width: 0; }
 .split > *, .market-shell > * { min-width: 0; }
+
+/* A contract address truncated with an ellipsis is worse than a short one:
+   the tail is the half people check against the post that sent them. */
+.ca-short { display: none; }
+@media (max-width: 560px) {
+  .ca-full { display: none; }
+  .ca-short { display: inline; }
+}

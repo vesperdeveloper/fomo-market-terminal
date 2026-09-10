@@ -51,10 +51,15 @@ export default function ContractAddress({
         style={{
           background: "transparent", border: "none", padding: 0, cursor: "pointer",
           color: copied ? "var(--up)" : "var(--fg)", fontFamily: "inherit",
-          fontSize: "inherit", overflow: "hidden", textOverflow: "ellipsis",
+          fontSize: "inherit",
         }}
       >
-        {copied ? "copied" : full ? TOKEN.address : shortCA()}
+        {copied ? "copied" : full ? (
+          <>
+            <span className="ca-full">{TOKEN.address}</span>
+            <span className="ca-short">{shortCA()}</span>
+          </>
+        ) : shortCA()}
       </button>
       <a
         href={explorerAddress(TOKEN.address)}
