@@ -11,7 +11,7 @@ import type { Store } from "./store";
  * a lie the moment anyone acts on it. $25k keeps a $100 ticket inside a
  * fraction of a cent of its quote and a $500 ticket inside ~1c. */
 export const SEED_PER_MARKET = 25_000;
-export const ROSTER_SIZE = 10;
+export const ROSTER_SIZE = 20;
 export const WINDOWS: Window[] = ["24h", "7d"];
 
 const WINDOW_MS: Record<Window, number> = {
