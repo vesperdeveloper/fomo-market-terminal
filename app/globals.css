@@ -290,3 +290,10 @@ input::placeholder { color: var(--fg-faint); }
 @media (max-width: 480px) {
   .footer-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* A grid item's default minimum is its content, so a column told to be 1fr
+   still refuses to go narrower than the widest thing inside it — which is how
+   the market page stayed wider than the screen after its columns had already
+   collapsed. Saying so explicitly is the whole fix. */
+.split, .market-shell { min-width: 0; }
+.split > *, .market-shell > * { min-width: 0; }
