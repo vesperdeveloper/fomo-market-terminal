@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Mark from "./Mark";
 import { useWallet } from "./WalletButton";
 import WalletMenu from "./WalletMenu";
+import ContractAddress from "./ContractAddress";
 import { short } from "@/lib/wallet";
 
 const LINKS = [
@@ -97,20 +98,7 @@ export default function Nav() {
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "var(--s-4)" }}>
           <span className="nav-clock"><Clock /></span>
 
-          {/* the contract address, once there is one to publish */}
-          <span
-            className="nav-ca num"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "5px 10px", borderRadius: "var(--r-sm)",
-              border: "1px solid var(--rule)", background: "var(--surface-raised)",
-              fontSize: ".75rem", color: "var(--fg-muted)", whiteSpace: "nowrap",
-            }}
-          >
-            <span style={{ color: "var(--fg-faint)" }}>CA</span>
-            <span style={{ color: "var(--fg-faint)" }}>:</span>
-            <span style={{ color: "var(--accent-hover)" }}>soon</span>
-          </span>
+          <span className="nav-ca"><ContractAddress /></span>
 
           {/* The balance only appears once there is a wallet in play, and it
               is a menu rather than a label: switching accounts and dropping
