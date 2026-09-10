@@ -18,12 +18,7 @@ export default function Footer() {
       }}
     >
       <div
-        className="wrap-wide"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(240px, 1.5fr) repeat(3, minmax(120px, 1fr))",
-          borderInline: "1px solid var(--rule)",
-        }}
+        className="wrap-wide footer-grid"
       >
         <div style={{ padding: "var(--s-10) var(--s-6) var(--s-10) 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

@@ -274,3 +274,19 @@ input::placeholder { color: var(--fg-faint); }
   }
   .reveal { opacity: 1; transform: none; }
 }
+
+/* The footer's columns had hard minimums and no breakpoint: 240px plus three
+   times 120px plus gaps is ~700px, which a phone cannot show. Because it sits
+   on every page, it set the width of every page — the browser zoomed the whole
+   site out to fit it, which is why everything read as tiny rather than broken. */
+.footer-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.5fr) repeat(3, minmax(120px, 1fr));
+  border-inline: 1px solid var(--rule);
+}
+@media (max-width: 860px) {
+  .footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .footer-grid { grid-template-columns: minmax(0, 1fr); }
+}
