@@ -132,7 +132,7 @@ def snapshot_at(token, user_id, when):
     """
     url = ("https://prod-api.fomo.family/v2/userTokens/aggregatedSnapshotById"
            f"?userId={user_id}&snapshotId={when}")
-    r = requests.get(url, headers=api_headers(token), impersonate=IMPERSONATE, timeout=45)
+    r = requests.get(url, headers=api_headers(token), impersonate=IMPERSONATE, timeout=15)
     if r.status_code != 200:
         return None
     body = (r.json() or {}).get("responseObject") or {}
@@ -142,35 +142,54 @@ def snapshot_at(token, user_id, when):
     return pnl if isinstance(pnl, (int, float)) and pnl != 0 else None
 
 
-def history_for(token, user_id, days=30):
+def history_for(token, user_id, days=14):
     """
-    Enough past to draw a line.
+    Enough past to draw a line, and no more than that.
 
-    Dense where the interface is dense — hourly over the last two days, which
-    is what the 24h chart and the day's move are read from — and every eight
-    hours before that, which is as coarse as a month can be without the line
-    turning into a staircase. Roughly 130 requests, once per account, ever.
+    This used to fetch a month at hourly detail for the recent part: about a
+    hundred and thirty requests per account, fired back to back. Doing that
+    for nine accounts in a row is what got the reading account's API access
+    revoked — the endpoint is meant to serve a page, not a scraper.
+
+    Now it is fourteen days at eight-hour steps, forty-odd requests, spaced.
+    The five-minute readings fill in the recent detail on their own within a
+    day, so the dense part was never worth asking for.
     """
     now = int(time.time())
-    hour = now // HOUR * HOUR
-    wanted = [hour - k * HOUR for k in range(1, 49)]
-    eight = hour // EIGHT_HOURS * EIGHT_HOURS
-    wanted += [eight - k * EIGHT_HOURS for k in range(6, days * 3)]
+    eight = now // EIGHT_HOURS * EIGHT_HOURS
+    wanted = [eight - k * EIGHT_HOURS for k in range(1, days * 3 + 1)]
 
+    started = time.monotonic()
     points = []
     for when in sorted(set(wanted)):
+        if time.monotonic() - started > BACKFILL_BUDGET_S / 2:
+            break
         pnl = snapshot_at(token, user_id, when)
         if pnl is not None:
             points.append({"t": datetime.fromtimestamp(when, timezone.utc)
                            .isoformat(timespec="seconds").replace("+00:00", "Z"),
                            "pnl": pnl})
+        # a small gap between calls: this endpoint serves a page, and a
+        # request every few milliseconds does not look like one
+        time.sleep(0.4)
     return points
+
+
+# The reading is what settles markets; the backfill is a convenience. When
+# fomo is slow or throttling, 130 sequential requests per handle can outlast
+# the whole tick — and because the runs are serialised, one stuck backfill
+# stops every reading behind it. So it gets a budget, and gives up politely.
+BACKFILL_BUDGET_S = 90
 
 
 def backfill(token, handles, ids):
     """Fetch and push the past for handles the site says it is missing."""
+    started = time.monotonic()
     series = []
     for h in handles:
+        if time.monotonic() - started > BACKFILL_BUDGET_S:
+            print(f"  budget spent, leaving {h} for the next tick")
+            break
         uid = ids.get(h)
         if not uid:
             print(f"  {h}: no user id in the leaderboard, skipping")

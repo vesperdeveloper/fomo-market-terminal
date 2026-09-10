@@ -107,7 +107,9 @@ export async function POST(req: Request) {
   try {
     const { handlesMissingHistory } = await import("@/lib/store-postgres");
     const listed = (await store.getTraders()).slice(0, ROSTER_SIZE).map((t) => t.handle);
-    needHistory = (await handlesMissingHistory(listed)).slice(0, 2);
+    // one account per tick: the endpoint being asked is a page
+    // endpoint, and nine at once is what got the reader blocked
+    needHistory = (await handlesMissingHistory(listed)).slice(0, 1);
   } catch { needHistory = []; }
 
   return NextResponse.json({
