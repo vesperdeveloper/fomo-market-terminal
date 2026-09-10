@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Address } from "viem";
 import {
-  connect, currentAccount, usdgBalance, gasBalance, hasWallet, short, injected,
+  connect, usdgBalance, gasBalance, hasWallet, short, injected,
   switchAccount, forgetWallet,
 } from "@/lib/wallet";
 
@@ -67,6 +67,12 @@ export interface WalletState {
  * anything. Reading a board needs no wallet, and a venue that demands one at
  * the door is asking for a signature in exchange for nothing.
  *
+ * It also used to pick a previous session back up with eth_accounts, which
+ * prompts nothing — but it is still a request to the wallet on page load, and
+ * with more than one extension installed that is enough to make one of them
+ * speak up. Browsing asks the wallet nothing at all now; connecting happens
+ * where it belongs, at the stake.
+ *
  * So the state lives in one module-level store rather than in each component.
  * The ticket asks for a wallet at the moment of the stake; the store then
  * tells the nav, which is why the balance appears up there without the nav
@@ -80,8 +86,6 @@ interface Snapshot {
   connecting: boolean;
   error: string | null;
 }
-
-const REMEMBER_KEY = "fomomarket.wallet.seen";
 
 let snapshot: Snapshot = {
   address: null, balance: null, gas: null, installed: false, connecting: false, error: null,
@@ -120,33 +124,11 @@ async function loadBalance(address: Address) {
   });
 }
 
-/**
- * Pick a previous session back up without prompting.
- *
- * `eth_accounts` never opens a wallet — it only reports what has already been
- * authorised — but it is still gated on having connected here before, so a
- * first-time visitor's extension is not touched at all.
- */
-let resumed = false;
-async function resumeQuietly() {
-  if (resumed || typeof window === "undefined") return;
-  resumed = true;
-  let seen = false;
-  try { seen = localStorage.getItem(REMEMBER_KEY) === "1"; } catch {}
-  if (!seen) return;
-  const a = await currentAccount().catch(() => null);
-  if (!a) return;
-  set({ address: a, installed: true });
-  watchAccounts();
-  void loadBalance(a);
-}
-
 /** The one call that can open a wallet. Nothing else in the app may. */
 async function connectWallet(): Promise<Address | null> {
   set({ connecting: true, error: null });
   try {
     const a = await connect();
-    try { localStorage.setItem(REMEMBER_KEY, "1"); } catch {}
     set({ address: a, installed: true, connecting: false });
     watchAccounts();
     void loadBalance(a);
@@ -165,7 +147,6 @@ async function switchWallet(): Promise<Address | null> {
   set({ connecting: true, error: null });
   try {
     const a = await switchAccount();
-    try { localStorage.setItem(REMEMBER_KEY, "1"); } catch {}
     set({ address: a, balance: null, gas: null, installed: true, connecting: false });
     watchAccounts();
     void loadBalance(a);
@@ -182,15 +163,12 @@ async function switchWallet(): Promise<Address | null> {
 
 async function disconnect(): Promise<void> {
   await forgetWallet();
-  try { localStorage.removeItem(REMEMBER_KEY); } catch {}
   set({ address: null, balance: null, gas: null, error: null });
 }
 
 /** The connected account and its USDG balance, if there is one yet. */
 export function useWallet(): WalletState {
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-
-  useEffect(() => { void resumeQuietly(); }, []);
 
   const refreshBalance = useCallback(async () => {
     if (!snapshot.address) { set({ balance: null, gas: null }); return; }
