@@ -48,7 +48,19 @@ auth = {"authorization": f"Bearer {SECRET}"}
 
 
 def stored_refresh_token():
-    """The site holds the current one; the environment is only a seed."""
+    """
+    Whichever session is current, with the environment winning.
+
+    The site holds the token so it can survive a rotation without a redeploy,
+    but that made a stale one impossible to replace: a fresh sign-in wrote the
+    new token to the environment and the reader kept authenticating with the
+    dead one out of the database, and answered 403 while a hand-run request
+    with the same new token answered 200. An explicitly set environment
+    variable is the operator saying "use this one", so it wins and is written
+    back.
+    """
+    if FALLBACK_REFRESH:
+        return FALLBACK_REFRESH
     try:
         r = requests.get(f"{SITE}/api/keeper/session", headers=auth, timeout=30)
         if r.status_code == 200:
