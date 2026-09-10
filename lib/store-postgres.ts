@@ -81,6 +81,8 @@ export function migrate(): Promise<void> {
         payout     double precision
       );
       CREATE INDEX IF NOT EXISTS positions_owner_idx ON positions (owner);
+      -- lookups are case-insensitive, so the index has to be too
+      CREATE INDEX IF NOT EXISTS positions_owner_lower_idx ON positions (lower(owner));
 
       ALTER TABLE positions ADD COLUMN IF NOT EXISTS deposit_tx text;
       ALTER TABLE positions ADD COLUMN IF NOT EXISTS payout_tx  text;
@@ -239,10 +241,22 @@ export const postgresStore: Store = {
     );
   },
 
+  /**
+   * Positions for one owner, matched without regard to case.
+   *
+   * An Ethereum address has two spellings of the same value: the checksummed
+   * one a wallet hands the browser, and the lowercase one written when the
+   * trade was booked. Three call sites had to remember to normalise and one
+   * of them did not, so every wallet-held position was invisible in the
+   * portfolio while the redeem endpoint could see it perfectly well. Better
+   * to make it impossible to get wrong here than to fix the third caller.
+   */
   async getPositions(owner) {
     await migrate();
     const { rows } = owner
-      ? await db().query(`SELECT * FROM positions WHERE owner = $1 ORDER BY created_at ASC`, [owner])
+      ? await db().query(
+          `SELECT * FROM positions WHERE lower(owner) = lower($1) ORDER BY created_at ASC`,
+          [owner])
       : await db().query(`SELECT * FROM positions ORDER BY created_at ASC`);
     return rows.map(toPosition);
   },

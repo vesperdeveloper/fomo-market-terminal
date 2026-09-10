@@ -69,7 +69,9 @@ export const memoryStore: Store = {
     if (i >= 0) MEM.markets[i] = m; else MEM.markets.push(m);
   },
   async getPositions(owner) {
-    return owner ? MEM.positions.filter((p) => p.owner === owner) : [...MEM.positions];
+    // same rule as the durable store: an address has two spellings
+    const want = owner?.toLowerCase();
+    return want ? MEM.positions.filter((p) => p.owner.toLowerCase() === want) : [...MEM.positions];
   },
   async putPosition(p) {
     const i = MEM.positions.findIndex((x) => x.id === p.id);
